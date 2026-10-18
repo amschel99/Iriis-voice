@@ -87,13 +87,7 @@ class Agent:
 
     def _voice_style(self) -> str:
         """Which tag syntax she should write: only what the voice engine in use can actually perform."""
-        import os
-        t = self.cfg.tts
-        if t.backend != "orpheus":
-            return "plain"
-        if t.orpheus_flavor == "open":
-            return "open" if t.orpheus_url and os.environ.get(t.orpheus_token_env) else "plain"
-        return "groq" if os.environ.get(t.orpheus_api_key_env) else "plain"
+        return self.cfg.tts.effective_flavor() or "plain"
 
     # ------------------------------------------------------------------ persistence
 

@@ -58,8 +58,14 @@ class Speech:
             if self._tts is None:
                 from iriis.tts import make_tts
                 chain = [self.cfg.tts.backend] + [b for b in ("kokoro", "piper") if b != self.cfg.tts.backend]
+                flavor = self.cfg.tts.effective_flavor()
+                if flavor:   # own GPU if configured, else Groq's Orpheus if there's a key
+                    self.cfg.tts.orpheus_flavor = flavor
                 errors = []
                 for backend in chain:
+                    if backend == "orpheus" and not flavor:
+                        errors.append("orpheus: no GPU URL/token and no GROQ_API_KEY")
+                        continue
                     try:
                         self._tts = make_tts(self.cfg.tts, backend)
                         break

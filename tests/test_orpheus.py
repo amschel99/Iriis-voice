@@ -194,7 +194,13 @@ def test_prompt_style_follows_what_is_usable(monkeypatch, tmp_path):
     cfg = Config()
     cfg.tts.backend, cfg.tts.orpheus_flavor = "orpheus", "open"
     agent = Agent(cfg, None, None, PermissionManager(cfg, []))
-    assert agent._voice_style() == "plain"                    # no URL yet: don't write <laugh> tags
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.delenv("ORPHEUS_TOKEN", raising=False)
+    assert agent._voice_style() == "plain"                    # nothing usable: don't write any tags
+    monkeypatch.setenv("GROQ_API_KEY", "gk")
+    assert agent._voice_style() == "groq"                     # no GPU yet, but Groq works meanwhile
+    assert "hannah" in cfg.tts.casting()
     cfg.tts.orpheus_url = "https://x.modal.run"
     monkeypatch.setenv("ORPHEUS_TOKEN", "ot")
-    assert agent._voice_style() == "open"
+    assert agent._voice_style() == "open"                     # own GPU wins once it exists
+    assert "tara" in cfg.tts.casting()

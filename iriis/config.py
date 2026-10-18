@@ -110,8 +110,20 @@ class TTSConfig(BaseModel):
     # Casting sheet per flavour: how each voice sounds and what it suits; the AI casts characters from it.
     voice_casting: dict[str, dict[str, str]] = Field(default_factory=lambda: {k: dict(v) for k, v in DEFAULT_CASTING.items()})
 
+    def effective_flavor(self) -> str | None:
+        """The Orpheus flavour that can actually run: your own GPU if configured, else Groq if there's a key."""
+        import os
+        if self.backend != "orpheus":
+            return None
+        own = bool(self.orpheus_url and os.environ.get(self.orpheus_token_env))
+        groq = bool(os.environ.get(self.orpheus_api_key_env))
+        if self.orpheus_flavor == "open":
+            return "open" if own else ("groq" if groq else None)
+        return "groq" if groq else ("open" if own else None)
+
     def casting(self) -> dict[str, str]:
-        return self.voice_casting.get(self.orpheus_flavor) or DEFAULT_CASTING[self.orpheus_flavor]
+        flavor = self.effective_flavor() or self.orpheus_flavor
+        return self.voice_casting.get(flavor) or DEFAULT_CASTING[flavor]
     kokoro_model: str = "models/tts/kokoro-v1.0.int8.onnx"
     kokoro_voices: str = "models/tts/voices-v1.0.bin"
     voice: str = "af_heart"
