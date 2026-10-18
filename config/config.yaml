@@ -54,6 +54,7 @@ llm:
   model: deepseek-flash        # DeepSeek V4.1 Flash: tool calling, cheap with prompt caching
   fallback_model: ""           # same-provider model to retry with on rate limits / outages (e.g. deepseek-v4-pro)
   reasoning_effort: low        # only sent to gpt-oss models
+  thinking: "off"              # DeepSeek: off = instant answers (voice); low/high = thinks first (slower, deeper)
   # Faster first word (voice): Groq. base_url https://api.groq.com/openai/v1, api_key_env GROQ_API_KEY,
   #   model openai/gpt-oss-120b, fallback_model openai/gpt-oss-20b
   temperature: 0.4

@@ -59,6 +59,8 @@ class LLMConfig(BaseModel):
     base_url: str = "https://api.groq.com/openai/v1"   # used by backend: openai
     api_key_env: str = "GROQ_API_KEY"                   # name of the env var holding the key
     reasoning_effort: str | None = "low"                 # gpt-oss on Groq: low = fastest first token
+    # DeepSeek "thinking": off = answers immediately (best for voice); low/high = reasons first (slower, deeper)
+    thinking: Literal["off", "low", "high"] = "off"
     max_tokens: int = 2048
     model: str = "openai/gpt-oss-120b"
     fallback_model: str = "openai/gpt-oss-20b"

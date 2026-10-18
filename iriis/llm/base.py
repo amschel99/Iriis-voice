@@ -51,9 +51,12 @@ class LLMClient(ABC):
         return {"role": "tool", "content": content, "tool_name": call.name, "tool_call_id": call.id}
 
     @staticmethod
-    def assistant_tool_message(text: str, calls: list[ToolCall]) -> dict[str, Any]:
-        return {
+    def assistant_tool_message(text: str, calls: list[ToolCall], reasoning: str = "") -> dict[str, Any]:
+        msg = {
             "role": "assistant",
             "content": text,
             "tool_calls": [{"id": c.id, "type": "function", "function": {"name": c.name, "arguments": c.arguments}} for c in calls],
         }
+        if reasoning:
+            msg["reasoning_content"] = reasoning
+        return msg

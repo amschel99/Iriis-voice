@@ -43,7 +43,8 @@ class OpenAICompatClient(LLMClient):
             if m.get("role") == "tool":
                 out.append({"role": "tool", "content": m["content"], "tool_call_id": m.get("tool_call_id") or "call"})
                 continue
-            m = {k: v for k, v in m.items() if k in ("role", "content", "tool_calls", "name")}
+            # reasoning_content: DeepSeek requires earlier reasoning to be sent back on tool turns
+            m = {k: v for k, v in m.items() if k in ("role", "content", "tool_calls", "name", "reasoning_content")}
             if m.get("tool_calls"):
                 m["tool_calls"] = [
                     {"id": tc.get("id") or "call", "type": "function",
@@ -67,7 +68,19 @@ class OpenAICompatClient(LLMClient):
             payload["tool_choice"] = "auto"
         if self.cfg.reasoning_effort and "gpt-oss" in payload["model"]:
             payload["reasoning_effort"] = self.cfg.reasoning_effort
+        if self.is_deepseek:
+            # DeepSeek thinks by default (effort high): many seconds before the first word, and it can use
+            # the whole token budget, leaving an empty reply. Voice wants it off unless asked for.
+            if self.cfg.thinking == "off":
+                payload["thinking"] = {"type": "disabled"}
+            else:
+                payload["thinking"] = {"type": "enabled"}
+                payload["reasoning_effort"] = self.cfg.thinking
         return payload
+
+    @property
+    def is_deepseek(self) -> bool:
+        return "deepseek" in str(self.http.base_url)
 
     async def chat_stream(self, messages, tools=None, model=None) -> AsyncIterator[LLMEvent]:
         try:
@@ -84,6 +97,7 @@ class OpenAICompatClient(LLMClient):
         payload = self._payload(messages, tools, model)
         partial: dict[int, dict[str, Any]] = {}
         stats: dict[str, Any] = {}
+        reasoning: list[str] = []
         async with self.http.stream("POST", "/chat/completions", json=payload) as resp:
             if resp.status_code != 200:
                 body = (await resp.aread()).decode(errors="replace")
@@ -105,6 +119,8 @@ class OpenAICompatClient(LLMClient):
                 if chunk["choices"][0].get("finish_reason"):
                     stats["finish_reason"] = chunk["choices"][0]["finish_reason"]
                 delta = chunk["choices"][0].get("delta") or {}
+                if delta.get("reasoning_content"):
+                    reasoning.append(delta["reasoning_content"])
                 if delta.get("content"):
                     yield LLMEvent(text=delta["content"])
                 for tc in delta.get("tool_calls") or []:
@@ -120,6 +136,8 @@ class OpenAICompatClient(LLMClient):
             except json.JSONDecodeError:
                 args = {"_raw": slot["args"]}
             calls.append(ToolCall(name=slot["name"], arguments=args if isinstance(args, dict) else {}, id=slot["id"] or uuid.uuid4().hex[:8]))
+        if reasoning:
+            stats["reasoning_content"] = "".join(reasoning)
         yield LLMEvent(tool_calls=calls, done=True, stats=stats)
 
     async def health(self) -> tuple[bool, str]:

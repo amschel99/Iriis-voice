@@ -233,7 +233,7 @@ class Agent:
             spoken_upto_screen = True  # False once we hit the SCREEN: marker
             calls: list[ToolCall] = []
             offer_tools = tools if (_iteration < self.cfg.llm.max_tool_iterations and not nudged) else None
-            finish = ""
+            finish, reasoning = "", ""
             async for ev in self.llm.chat_stream(messages, offer_tools):
                 if ev.text:
                     if not first_token_seen:
@@ -254,6 +254,7 @@ class Agent:
                 if ev.done:
                     calls = ev.tool_calls
                     finish = str((ev.stats or {}).get("finish_reason", ""))
+                    reasoning = str((ev.stats or {}).get("reasoning_content", ""))
             tail = chunker.flush()
             if tail and not SCREEN_MARKER.search(tail):
                 await cb.say(tail)
@@ -281,7 +282,7 @@ class Agent:
                 result.text = spoken
                 break
 
-            turn.append(LLMClient.assistant_tool_message(full_text, calls))
+            turn.append(LLMClient.assistant_tool_message(full_text, calls, reasoning))
             for call in calls:
                 output = await self._execute(call, known, cb)
                 result.tool_calls.append({"name": call.name, "arguments": call.arguments, "result": output[:300]})

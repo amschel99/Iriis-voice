@@ -78,3 +78,51 @@ def test_env_overrides(monkeypatch):
     cfg = load_config()
     assert cfg.llm.model == "openai/gpt-oss-20b"
     assert cfg.server.cloud_servers == ["time_and_calc"] and cfg.server.stt is False
+
+
+def _deepseek(monkeypatch, handler, **cfg):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "dk")
+    client = OpenAICompatClient(LLMConfig(backend="openai", base_url="https://api.deepseek.com", api_key_env="DEEPSEEK_API_KEY",
+                                          model="deepseek-flash", fallback_model="", **cfg))
+    client.http = httpx.AsyncClient(base_url="https://api.deepseek.com", transport=httpx.MockTransport(handler),
+                                    headers=client.http.headers)
+    return client
+
+
+def test_deepseek_thinking_is_off_by_default_for_voice(monkeypatch):
+    bodies = []
+
+    def handler(request):
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, text=sse({"choices": [{"delta": {"content": "Hi"}, "finish_reason": "stop"}]}))
+
+    events = asyncio.run(collect(_deepseek(monkeypatch, handler)))
+    assert bodies[0]["thinking"] == {"type": "disabled"} and "reasoning_effort" not in bodies[0]
+    assert events[-1].stats["finish_reason"] == "stop"
+    asyncio.run(collect(_deepseek(monkeypatch, handler, thinking="high")))
+    assert bodies[1]["thinking"] == {"type": "enabled"} and bodies[1]["reasoning_effort"] == "high"
+
+
+def test_groq_never_gets_the_deepseek_thinking_field(monkeypatch):
+    bodies = []
+
+    def handler(request):
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, text=sse({"choices": [{"delta": {"content": "ok"}}]}))
+
+    asyncio.run(collect(make(monkeypatch, handler)))
+    assert "thinking" not in bodies[0]
+
+
+def test_reasoning_is_captured_and_sent_back_on_tool_turns(monkeypatch):
+    def handler(request):
+        return httpx.Response(200, text=sse(
+            {"choices": [{"delta": {"reasoning_content": "Let me check the time."}}]},
+            {"choices": [{"delta": {"tool_calls": [{"index": 0, "id": "c1", "function": {"name": "t__now", "arguments": "{}"}}]}}]}))
+
+    events = asyncio.run(collect(_deepseek(monkeypatch, handler, thinking="low")))
+    assert events[-1].stats["reasoning_content"] == "Let me check the time."
+    from iriis.llm.base import LLMClient
+    msg = LLMClient.assistant_tool_message("", events[-1].tool_calls, events[-1].stats["reasoning_content"])
+    sent = OpenAICompatClient._to_openai([msg])
+    assert sent[0]["reasoning_content"] == "Let me check the time."

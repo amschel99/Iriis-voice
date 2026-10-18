@@ -35,7 +35,7 @@ class OllamaClient(LLMClient):
     def _to_ollama(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         out = []
         for m in messages:
-            m = {k: v for k, v in m.items() if k != "tool_call_id"}
+            m = {k: v for k, v in m.items() if k not in ("tool_call_id", "reasoning_content")}
             if m.get("tool_calls"):
                 m["tool_calls"] = [{"function": tc["function"]} for tc in m["tool_calls"]]
             out.append(m)
