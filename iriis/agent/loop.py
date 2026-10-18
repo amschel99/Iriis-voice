@@ -218,9 +218,12 @@ class Agent:
         known = {t["function"]["name"] for t in tools}
         turn: list[dict[str, Any]] = [{"role": "user", "content": user_text}]
 
+        self._spoke = False
         try:
             return await self._run(turn, tools, known, cb, result, t0)
         except asyncio.CancelledError:
+            if not self._spoke:
+                raise   # cancelled before she said a word (you were still talking): keep no half-request
             # Keep only the user's words: a half-finished tool exchange would be rejected by
             # OpenAI-style APIs on the next turn (every tool call needs its result).
             self.history.extend([turn[0], {"role": "assistant", "content": "(interrupted by the user)"}])
@@ -233,6 +236,7 @@ class Agent:
 
         async def say_unless_silent(sentence: str) -> None:
             if not _is_silent(sentence):
+                self._spoke = True
                 await say_to_user(sentence)
 
         cb = TurnCallbacks(say=say_unless_silent, confirm=cb.confirm, show=cb.show, on_first_token=cb.on_first_token)

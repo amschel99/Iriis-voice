@@ -37,6 +37,9 @@ class RemoteVoiceClient:
         self.turn_done = asyncio.Event()
         self.turn_done.set()
         self.awaiting_confirm = False
+        self.heard_reply = False          # has any of her reply played yet this turn?
+        self.unfinished: np.ndarray | None = None   # your words so far, if you paused mid-thought
+        self.last_utterance: np.ndarray | None = None
         self.confirm_question = ""
         self.confirm_played = False
         self.timings: dict[str, float] = {}
@@ -114,18 +117,26 @@ class RemoteVoiceClient:
                 self.t_end = time.perf_counter()
                 return ev.audio
 
-    async def _barge_in(self) -> list[np.ndarray]:
+    async def _barge_in(self) -> tuple[str, list[np.ndarray]]:
+        """Returns ("continued", audio) if you keep talking before she has said anything (you only paused:
+        your words get joined into one request), or ("barge", audio) if you talk over her while she speaks."""
         q = self._take_mic()
         vad = SileroVAD()
         need = max(1, int(self.cfg.barge_in.min_speech_ms / 32))
+        need_continue = max(1, int(400 / 32))
         run, recent = 0, []
         while True:
             block = await q.get()
-            recent = (recent + [block])[-8:]
+            recent = (recent + [block])[-12:]
             if not self.player.busy:
-                # Only talking OVER her counts as an interruption. While she's still thinking, extra
-                # speech (you repeating yourself, a TV, people nearby) must not cancel your request.
-                run = 0
+                if self.heard_reply:
+                    run = 0          # a gap between her sentences: not you
+                    continue
+                # She hasn't started answering yet and you're talking again: you weren't finished.
+                for p in vad.process(block):
+                    run = run + 1 if p >= self.cfg.vad.threshold else max(0, run - 1)
+                if run >= need_continue:
+                    return "continued", recent
                 continue
             rms = float(np.sqrt(np.mean(block ** 2)))
             echo = self.player.echo_level
@@ -133,7 +144,7 @@ class RemoteVoiceClient:
             for p in vad.process(block):
                 run = run + 1 if (p >= self.cfg.vad.threshold and not gated) else max(0, run - 1)
             if run >= need:
-                return recent
+                return "barge", recent
 
     # ------------------------------------------------------------------ server messages
 
@@ -144,6 +155,7 @@ class RemoteVoiceClient:
                 if pending_audio is not None:
                     pcm = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
                     self.player.play(pcm, pending_audio.get("sample_rate", OUT_SR))
+                    self.heard_reply = True
                     if (self.awaiting_confirm and pending_audio.get("last", True)
                             and pending_audio.get("text", "").strip() == self.confirm_question.strip()):
                         self.confirm_played = True   # streamed: only once the question's final chunk arrived
@@ -190,9 +202,9 @@ class RemoteVoiceClient:
             await self.ws.send(pcm[i:i + 32000])
         await self.ws.send(json.dumps({"type": "end_utterance"}))
 
-    async def _wait_reply(self) -> list[np.ndarray] | None:
+    async def _wait_reply(self) -> tuple[str, list[np.ndarray]] | None:
         """Wait for the answer (or a confirmation question) to finish playing.
-        Returns the audio heard so far if the user barges in."""
+        Returns (kind, audio heard so far) if you start talking again; see _barge_in."""
         monitor = asyncio.create_task(self._barge_in()) if self.cfg.barge_in.enabled else None
         settled = asyncio.create_task(self._settled())
         finished, _ = await asyncio.wait({settled} | ({monitor} if monitor else set()), return_when=asyncio.FIRST_COMPLETED)
@@ -201,8 +213,9 @@ class RemoteVoiceClient:
             self.player.stop()
             if self.ws is not None:
                 await self.ws.send(json.dumps({"type": "interrupt"}))
-            self.ui.info("(interrupted)")
-            return monitor.result()
+            kind, heard = monitor.result()
+            self.ui.info("(you kept talking: waiting for the rest)" if kind == "continued" else "(interrupted)")
+            return kind, heard
         if monitor:
             monitor.cancel()
         return None
@@ -283,6 +296,12 @@ class RemoteVoiceClient:
                 audio = await self._record(timeout_s=wait if followup else None)
             else:
                 audio, preroll = await self._record(preroll=preroll), None
+                if self.unfinished is not None:
+                    # you paused and carried on: send everything as ONE request
+                    first = self.unfinished
+                    self.unfinished = None
+                    gap = np.zeros(int(self.cfg.audio.sample_rate * 0.3), dtype=np.float32)
+                    audio = np.concatenate([first, gap, audio]) if audio is not None else first
             self.followup_until = 0.0
             if audio is None:
                 if self.awaiting_confirm and self.ws is not None:
@@ -299,6 +318,8 @@ class RemoteVoiceClient:
                     await self.local_voice.say(NOT_CONNECTED_REPLY)
                 continue
             self.turn_done.clear()
+            self.heard_reply = False
+            self.last_utterance = audio
             self.ui.set_state("thinking")
             try:
                 await self._send_utterance(audio)
@@ -306,7 +327,12 @@ class RemoteVoiceClient:
                 if self.local_voice:
                     await self.local_voice.say(NOT_CONNECTED_REPLY)
                 continue
-            preroll = await self._wait_reply()
+            waited = await self._wait_reply()
+            preroll = None
+            if waited is not None:
+                kind, preroll = waited
+                if kind == "continued":
+                    self.unfinished = self.last_utterance
             if not self.awaiting_confirm:
                 self.ui.latency({k: v for k, v in self.timings.items() if k != "first_audio"})
                 if preroll is None:

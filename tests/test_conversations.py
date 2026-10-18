@@ -208,3 +208,27 @@ def test_background_speech_is_ignored_silently(db, tmp_path):
     r, spoken = _say_and_collect(a, "and in other news the shilling rose today")   # a TV in the background
     assert spoken == [] and r.text == "" and r.timings.get("ignored") == 1
     assert a.history.messages == []                                                 # nothing kept
+
+
+def test_request_cancelled_before_she_speaks_leaves_no_trace(db, tmp_path):
+    """You paused, then kept talking: the half request is dropped and the joined one replaces it."""
+    class SlowLLM(SequenceLLM):
+        async def chat_stream(self, messages, tools=None, model=None):
+            await asyncio.sleep(5)
+            yield LLMEvent(done=True)
+
+    a = make_agent(db, tmp_path, SlowLLM([]))
+
+    async def run():
+        async def nop(*_):
+            return ""
+        task = asyncio.create_task(a.handle("I want you to explain to me", TurnCallbacks(say=nop, confirm=nop)))
+        await asyncio.sleep(0.05)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+    asyncio.run(run())
+    assert a.history.messages == []
+    assert ConversationStore(db).search("explain") == []

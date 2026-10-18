@@ -21,7 +21,7 @@ wakeword:
   followup_s: 86400            # conversation mode: keep listening 24 h after each reply (no wake word)
 
 vad:                           # Silero VAD endpointing
-  threshold: 0.5
+  threshold: 0.4               # lower catches quieter speech
   silence_ms: 1200             # this much silence ends your turn (pause to think without being cut off)
   min_speech_ms: 250           # shorter blips are ignored
   max_utterance_s: 20

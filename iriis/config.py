@@ -32,7 +32,7 @@ class WakeWordConfig(BaseModel):
 
 
 class VADConfig(BaseModel):
-    threshold: float = 0.5
+    threshold: float = 0.4
     silence_ms: int = 1200
     min_speech_ms: int = 250
     max_utterance_s: float = 20.0
