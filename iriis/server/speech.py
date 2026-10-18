@@ -8,7 +8,7 @@ import threading
 import numpy as np
 
 from iriis.config import Config
-from iriis.tts.text_normalize import normalize
+from iriis.tts.text_normalize import normalize, take_voice
 
 
 def pcm16(audio: np.ndarray) -> bytes:
@@ -112,6 +112,8 @@ class Speech:
         return await asyncio.to_thread(self._transcribe, audio)
 
     def _synthesize(self, text: str, voice: str | None) -> tuple[np.ndarray, int]:
+        tagged_voice, text = take_voice(text)      # "{troy} ..." picks the voice for this text
+        voice = tagged_voice or voice
         tts = self._load_tts()
         if tts.name.startswith("orpheus"):
             spoken = normalize(text, self.cfg.tts.currency, keep_directions=True)

@@ -172,9 +172,39 @@ def calm_shouting(text: str) -> str:
 DIRECTION_RE = re.compile(r"\[([A-Za-z][A-Za-z ,'-]{0,38})\]")
 
 
+VOICE_TAG_RE = re.compile(r"\{\s*(hannah|diana|autumn|troy|austin|daniel)\s*\}", re.I)
+
+
+def take_voice(text: str) -> tuple[str | None, str]:
+    """'{troy} Hello' -> ('troy', 'Hello'). The last voice tag in the text wins."""
+    tags = VOICE_TAG_RE.findall(text)
+    clean = re.sub(r"\s{2,}", " ", VOICE_TAG_RE.sub(" ", text)).strip()
+    return (tags[-1].lower() if tags else None), clean
+
+
 def strip_directions(text: str) -> str:
-    """Remove vocal directions like [angry] (for display and for voices that can't act)."""
-    return re.sub(r"\s{2,}", " ", DIRECTION_RE.sub("", text)).strip()
+    """Remove vocal directions like [angry] and voice tags like {troy} (for display and calm voices)."""
+    return re.sub(r"\s{2,}", " ", DIRECTION_RE.sub("", VOICE_TAG_RE.sub("", text))).strip()
+
+
+class Delivery:
+    """Per-reply acting state: a [direction] or {voice} carries on to later sentences until changed."""
+
+    def __init__(self, voice: str | None = None):
+        self.voice = voice
+        self.direction = ""
+
+    def apply(self, sentence: str) -> tuple[str, str | None]:
+        voice, sentence = take_voice(sentence)
+        if voice:
+            self.voice = voice
+            self.direction = ""          # a new character starts neutral unless told otherwise
+        dirs = DIRECTION_RE.findall(sentence)
+        if dirs:
+            self.direction = f"[{dirs[-1].strip()}]"
+        elif self.direction:
+            sentence = f"{self.direction} {sentence}"
+        return sentence, self.voice
 
 
 def is_shouting(text: str) -> bool:
@@ -187,6 +217,7 @@ def normalize(text: str, currency: str = "shillings", keep_directions: bool = Fa
     """keep_directions=True (expressive voices): keep [angry]-style directions, and turn an
     all-caps sentence into a [shouting] one. Otherwise directions are removed."""
     directions: list[str] = []
+    text = VOICE_TAG_RE.sub(" ", text)       # voices are chosen by the caller, never read out
     if keep_directions:
         if is_shouting(text) and not DIRECTION_RE.search(text):
             text = "[shouting] " + text

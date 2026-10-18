@@ -152,3 +152,11 @@ def test_flusher_runs_in_background(db):
         task.cancel()
     asyncio.run(run())
     assert store.pending == 0 and db.execute("SELECT COUNT(*) FROM messages")[0][0] == 1
+
+
+def test_system_prompt_always_renders():
+    """A stray { } in the prompt template would crash every request (str.format)."""
+    from iriis.llm.prompts import build_system_prompt
+    p = build_system_prompt("Iriis", "Amschel", "Nairobi, Kenya", "Africa/Nairobi", ["gym at Sarit"],
+                            conversation_summary="planning a Mombasa trip", last_active=time.time() - 7200)
+    assert "You are Iriis" in p and "{hannah}" in p and "gym at Sarit" in p and "new sitting" in p

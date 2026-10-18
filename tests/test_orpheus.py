@@ -75,3 +75,53 @@ def test_server_falls_back_to_kokoro_when_groq_fails(monkeypatch):
     speech._fallback = FakeKokoro()
     audio, sr = speech._synthesize("[angry] Go to bed.", None)
     assert len(audio) == 100 and sr == 24000
+
+
+def test_ai_chooses_voice_and_emotion_per_sentence():
+    from iriis.tts.text_normalize import Delivery, take_voice
+    assert take_voice("{Troy} Hello") == ("troy", "Hello")
+    d = Delivery()
+    assert d.apply("Once upon a time.") == ("Once upon a time.", None)
+    assert d.apply("{troy} [gravelly] Who goes there?") == ("[gravelly] Who goes there?", "troy")
+    assert d.apply("I said who goes there!") == ("[gravelly] I said who goes there!", "troy")   # carries on
+    assert d.apply("{hannah} It was the cat.") == ("It was the cat.", "hannah")                # new voice, neutral
+    assert strip_directions("{troy} [angry] Who?") == "Who?"
+    assert "troy" not in normalize("{troy} [angry] Who goes there?")   # calm voices never read tags
+
+
+def test_turn_passes_chosen_voices_to_tts(tmp_path, monkeypatch):
+    import asyncio
+    from iriis.agent.loop import Agent
+    from iriis.agent.permissions import PermissionManager
+    from iriis.llm.base import LLMClient, LLMEvent
+    from iriis.server.sessions import Session, run_turn
+
+    class StoryLLM(LLMClient):
+        model = "fake"
+        async def chat_stream(self, messages, tools=None, model=None):
+            for t in ["[warm] Here's a quick one. ", "{troy} [gravelly] Who goes there? ", "{hannah} [laughing] Just the cat!"]:
+                yield LLMEvent(text=t)
+            yield LLMEvent(done=True)
+        async def health(self):
+            return True, ""
+
+    class FakeSpeech:
+        calls = []
+        async def synthesize(self, text, voice=None):
+            self.calls.append((text, voice))
+            return np.zeros(10, dtype=np.float32), 24000
+
+    cfg = Config()
+    cfg.permissions.audit_log = str(tmp_path / "a.jsonl")
+    agent = Agent(cfg, StoryLLM(), None, PermissionManager(cfg, []))
+    events = []
+
+    async def emit(ev, audio):
+        events.append(ev)
+
+    speech = FakeSpeech()
+    asyncio.run(run_turn(Session("s", agent), "tell me a story", emit, speech=speech, speak=True))
+    assert [v for _, v in speech.calls] == [None, "troy", "hannah"]
+    assert speech.calls[1][0].startswith("[gravelly]")
+    shown = [e["text"] for e in events if e["type"] == "sentence"]
+    assert shown == ["Here's a quick one.", "Who goes there?", "Just the cat!"]

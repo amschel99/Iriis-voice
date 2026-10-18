@@ -11,7 +11,7 @@ from typing import Any, Awaitable, Callable
 
 from iriis.agent.loop import Agent, TurnCallbacks
 from iriis.server.speech import pcm16, wav_bytes
-from iriis.tts.text_normalize import strip_directions
+from iriis.tts.text_normalize import Delivery, strip_directions
 
 # emit(event_dict, binary_audio_or_None)
 Emit = Callable[[dict[str, Any], bytes | None], Awaitable[None]]
@@ -74,11 +74,18 @@ async def run_turn(session: Session, text: str, emit: Emit, *, speech=None, spea
     tts_q: asyncio.Queue[str | None] = asyncio.Queue()
     seq = 0
 
+    delivery = Delivery(voice)   # the AI's [emotion] and {voice} choices carry across sentences
+
     async def tts_worker():
         nonlocal seq
-        while (sentence := await tts_q.get()) is not None:
+        while (item := await tts_q.get()) is not None:
+            sentence, is_question = item
+            if is_question:
+                spoken, use_voice = sentence, voice   # confirmations: always her own, plain voice
+            else:
+                spoken, use_voice = delivery.apply(sentence)
             try:
-                audio, sr = await speech.synthesize(sentence, voice)
+                audio, sr = await speech.synthesize(spoken, use_voice)
             except Exception as e:  # noqa: BLE001
                 await emit({"type": "error", "message": f"TTS failed: {e}"}, None)
                 continue
@@ -99,7 +106,7 @@ async def run_turn(session: Session, text: str, emit: Emit, *, speech=None, spea
     async def say(sentence: str) -> None:
         await emit({"type": "sentence", "text": strip_directions(sentence)}, None)
         if worker:
-            await tts_q.put(sentence)
+            await tts_q.put((sentence, False))
 
     async def confirm(question: str) -> str:
         if not allow_confirm:
@@ -109,7 +116,7 @@ async def run_turn(session: Session, text: str, emit: Emit, *, speech=None, spea
         session.pending[cid] = fut
         await emit({"type": "confirm", "id": cid, "question": question, "session_id": session.id}, None)
         if worker:
-            await tts_q.put(question)
+            await tts_q.put((question, True))
         try:
             return await asyncio.wait_for(fut, confirm_timeout)
         except asyncio.TimeoutError:
