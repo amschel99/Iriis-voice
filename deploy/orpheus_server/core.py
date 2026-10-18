@@ -4,7 +4,9 @@ Host-agnostic: the same code runs in the Docker image (Hugging Face Inference En
 and on Modal. API (Groq-compatible, so Iriis just changes the URL):
     GET  /health                 -> 200 once the model is loaded (503 while loading)
     POST /v1/audio/speech        {"input": "...", "voice": "tara"} -> audio/wav, 24 kHz mono
-Auth: Authorization: Bearer <ORPHEUS_TOKEN>  (or X-Orpheus-Token: <token> when the host's own auth uses Authorization).
+Auth: X-Orpheus-Token: <ORPHEUS_TOKEN> (some hosts, e.g. Hugging Face Endpoints, strip Authorization),
+      or Authorization: Bearer <ORPHEUS_TOKEN>.
+Env: ORPHEUS_QUANTIZATION=fp8 (default) or "" for full bf16.
 
 Decoding follows canopyai/Orpheus-TTS: prompt = [START_OF_HUMAN] + tokens("voice: text") + [END markers],
 generated <custom_token_N> ids -> 7-token frames -> 3 SNAC codebooks -> audio.
@@ -69,7 +71,10 @@ class OrpheusModel:
             token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
             local = snapshot_download(MODEL_ID, token=token, cache_dir=self.cache_dir)
             self.tokenizer = AutoTokenizer.from_pretrained(local)
-            self.llm = LLM(model=local, dtype="bfloat16", max_model_len=4096,
+            # fp8 weights halve the memory read per token; speech generation is bandwidth-bound, so this
+            # roughly doubles speed (real time needs ~84 tokens/s) with negligible quality loss.
+            quant = os.environ.get("ORPHEUS_QUANTIZATION", "fp8") or None
+            self.llm = LLM(model=local, dtype="bfloat16", max_model_len=4096, quantization=quant,
                            gpu_memory_utilization=self.gpu_memory_utilization)
             self.snac = SNAC.from_pretrained(SNAC_ID, cache_dir=self.cache_dir).eval().to("cuda")
             self.torch = torch

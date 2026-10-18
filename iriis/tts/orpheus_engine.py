@@ -83,6 +83,9 @@ class OrpheusEngine(TTSEngine):
         host_token = os.environ.get(cfg.orpheus_host_token_env, "") if cfg.orpheus_host_token_env else ""
         if self.flavor == "open" and host_token:
             self.headers = {"Authorization": f"Bearer {host_token}", "X-Orpheus-Token": self.key}
+        elif self.flavor == "open":
+            # Hugging Face Endpoints strip Authorization before it reaches the container: send both.
+            self.headers = {"Authorization": f"Bearer {self.key}", "X-Orpheus-Token": self.key}
         else:
             self.headers = {"Authorization": f"Bearer {self.key}"}
         self.voice = voice_for(cfg.orpheus_voice, self.flavor) or self.pool[0]

@@ -223,3 +223,8 @@ def test_protected_host_gets_its_token_and_ours_moves_to_a_header(monkeypatch):
     cfg.tts.orpheus_flavor, cfg.tts.orpheus_url, cfg.tts.orpheus_host_token_env = "open", "https://e.endpoints.huggingface.cloud", "HF_TOKEN"
     eng = OrpheusEngine(cfg.tts)
     assert eng.headers == {"Authorization": "Bearer hf_x", "X-Orpheus-Token": "ot"}
+
+
+def test_open_flavor_sends_token_in_header_hf_does_not_strip(monkeypatch):
+    eng, _ = _open_engine(monkeypatch)
+    assert eng.headers["X-Orpheus-Token"] == "ot"
