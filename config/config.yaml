@@ -18,7 +18,7 @@ wakeword:
   model: hey_jarvis            # openWakeWord pretrained model name, or a path to a custom .onnx
   threshold: 0.45              # raise (0.6-0.7) if it triggers by itself; lower if it misses you
   push_to_talk_key: f9         # used when mode is push_to_talk (hold to talk, release to send)
-  followup_s: 10               # after she answers, keep listening this long (no wake word needed)
+  followup_s: 600              # conversation mode: keep listening 10 min after each reply (no wake word)
 
 vad:                           # Silero VAD endpointing
   threshold: 0.5

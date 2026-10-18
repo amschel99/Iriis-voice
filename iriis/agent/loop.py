@@ -25,6 +25,11 @@ RESET_RE = re.compile(r"^\W*(start over|new conversation|reset( the)? conversati
 RELOAD_RE = re.compile(r"^\W*reload (the |your )?tools\W*$", re.I)
 
 
+def _is_silent(text: str) -> bool:
+    """The model's way of ignoring speech that wasn't meant for her."""
+    return re.sub(r"[^a-z]", "", (text or "").lower()) == "silent"
+
+
 class ToolProvider(Protocol):
     def servers_catalog(self) -> dict[str, dict[str, Any]]: ...
     async def call_tool(self, name: str, arguments: dict[str, Any], confirmed: bool = False) -> str: ...
@@ -224,6 +229,13 @@ class Agent:
 
     async def _run(self, turn, tools, known, cb, result, t0) -> TurnResult:
         first_token_seen = False
+        say_to_user = cb.say
+
+        async def say_unless_silent(sentence: str) -> None:
+            if not _is_silent(sentence):
+                await say_to_user(sentence)
+
+        cb = TurnCallbacks(say=say_unless_silent, confirm=cb.confirm, show=cb.show, on_first_token=cb.on_first_token)
         nudged = False          # retried once after an empty reply
         nudge: list[dict[str, Any]] = []
         for _iteration in range(self.cfg.llm.max_tool_iterations + 2):
@@ -275,6 +287,13 @@ class Agent:
                     continue
                 full_text = "Sorry, I lost my train of thought there. Could you ask me that again?"
                 await cb.say(full_text)
+
+            if not calls and _is_silent(full_text):
+                # Background speech that wasn't for her: say nothing, keep nothing.
+                result.text = ""
+                result.timings["ignored"] = 1
+                result.timings["total_ms"] = (time.perf_counter() - t0) * 1000
+                return result
 
             if not calls:
                 spoken = SCREEN_MARKER.split(full_text)[0].strip()

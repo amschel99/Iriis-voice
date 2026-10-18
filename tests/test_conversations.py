@@ -201,3 +201,10 @@ def test_never_silent_even_if_retry_is_empty(db, tmp_path):
     a = make_agent(db, tmp_path, SequenceLLM(["", ""]))
     r, spoken = _say_and_collect(a, "hello?")
     assert "ask me that again" in r.text and spoken
+
+
+def test_background_speech_is_ignored_silently(db, tmp_path):
+    a = make_agent(db, tmp_path, SequenceLLM(["(silent)"]))
+    r, spoken = _say_and_collect(a, "and in other news the shilling rose today")   # a TV in the background
+    assert spoken == [] and r.text == "" and r.timings.get("ignored") == 1
+    assert a.history.messages == []                                                 # nothing kept
