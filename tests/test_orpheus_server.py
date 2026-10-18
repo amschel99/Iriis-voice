@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "deploy"))
 from orpheus_server.core import (AUDIO_TOKEN_BASE, END_OF_SPEECH, START_OF_SPEECH,  # noqa: E402
-                                 codes_from_token_ids, create_app, split_codebooks)
+                                 codes_from_token_ids, create_app, split_codebooks, stream_plan)
 
 
 def test_token_ids_to_codes_matches_reference_math():
@@ -31,9 +31,14 @@ class FakeModel:
     def load(self):
         pass
 
-    def wav(self, text, voice, **kw):
+    async def wav(self, text, voice, **kw):
         self.calls.append((text, voice))
         return b"RIFF....WAVE"
+
+    async def stream_pcm(self, text, voice, **kw):
+        self.calls.append((text, voice))
+        for _ in range(3):
+            yield bytes(4096)
 
 
 def make(monkeypatch):
@@ -68,3 +73,27 @@ def test_speech_needs_token_and_valid_voice(monkeypatch):
 def test_speech_while_loading_is_503(monkeypatch):
     client, _ = make(monkeypatch)
     assert client.post("/v1/audio/speech", json={"input": "hi"}, headers={"Authorization": "Bearer secret"}).status_code == 503
+
+
+def test_stream_plan_emits_every_frame_once_in_order():
+    for total in (1, 2, 3, 4, 7, 20):
+        emitted, out = 0, []
+        for frames_so_far in range(total + 1):              # frames arrive one at a time
+            while (p := stream_plan(frames_so_far, emitted, False)) is not None:
+                start, end, a, b = p
+                assert start <= a < b <= end and end <= frames_so_far
+                out += list(range(a, b)); emitted = b
+        p = stream_plan(total, emitted, True)
+        if p:
+            out += list(range(p[2], p[3]))
+        assert out == list(range(total)), total
+        # while streaming, each emitted frame had 2 frames of right context
+        assert stream_plan(5, 3, False) is None and stream_plan(6, 3, False) == (2, 6, 3, 4)
+
+
+def test_stream_endpoint_returns_pcm(monkeypatch):
+    client, model = make(monkeypatch)
+    model.ready = True
+    r = client.post("/v1/audio/speech/stream", json={"input": "hi", "voice": "leo"}, headers={"X-Orpheus-Token": "secret"})
+    assert r.status_code == 200 and r.headers["x-sample-rate"] == "24000" and len(r.content) == 3 * 4096
+    assert client.post("/v1/audio/speech/stream", json={"input": "hi"}).status_code == 401

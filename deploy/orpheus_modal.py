@@ -45,8 +45,8 @@ class Orpheus:
         return create_app(self.model, load_in_background=False)
 
     @modal.method()
-    def synth_wav(self, text: str, voice: str = "tara") -> bytes:
-        return self.model.wav(text, voice)
+    async def synth_wav(self, text: str, voice: str = "tara") -> bytes:
+        return await self.model.wav(text, voice)
 
 
 @app.local_entrypoint()
