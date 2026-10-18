@@ -11,6 +11,7 @@ from typing import Any, Awaitable, Callable
 
 import numpy as np
 
+from iriis.agent.echo import SelfEcho
 from iriis.agent.loop import Agent, TurnCallbacks
 from iriis.server.speech import pcm16, wav_bytes
 from iriis.tts.text_normalize import Delivery, strip_directions
@@ -27,6 +28,7 @@ class Session:
     pending: dict[str, asyncio.Future] = field(default_factory=dict)   # confirmation id -> reply text
     last_used: float = field(default_factory=time.time)
     current: asyncio.Task | None = None
+    echo: SelfEcho = field(default_factory=SelfEcho)   # what she said recently (to ignore her own voice)
 
     def resolve_confirmation(self, confirm_id: str | None, reply: str) -> bool:
         if not self.pending:
@@ -84,6 +86,8 @@ async def run_turn(session: Session, text: str, emit: Emit, *, speech=None, spea
             timings["first_audio_ms"] = (time.perf_counter() - t0) * 1000
         seq += 1
         data = pcm16(audio)
+        if last:   # remember her words as of when they finish playing (her own echo can come back then)
+            session.echo.said(strip_directions(sentence), at=time.time() + len(audio) / sr + 1.0)
         await emit({"type": "audio", "seq": seq, "sample_rate": sr, "format": "pcm_s16le", "bytes": len(data),
                     "text": strip_directions(sentence), "last": last}, data)
 

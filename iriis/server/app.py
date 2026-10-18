@@ -422,6 +422,10 @@ def create_app(cfg: Config | None = None) -> FastAPI:
                         await emit({"type": "transcript", "text": ""}, None)
                         continue
                     tr = await core.speech.transcribe(audio)
+                    if tr.text and session.echo.is_echo(tr.text):
+                        # Her own voice came back through the mic: not the user, so no reply.
+                        await emit({"type": "transcript", "text": "", "ignored": "own voice", "heard": tr.text}, None)
+                        continue
                     await emit({"type": "transcript", "text": tr.text, "stt_ms": round(tr.elapsed_s * 1000)}, None)
                     if not tr.text:
                         continue

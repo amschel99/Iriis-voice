@@ -112,6 +112,12 @@ class RemoteVoiceClient:
             return np.concatenate(chunks) if chunks else None
         v = self.cfg.vad
         ep = Endpointer(self.vad, v.threshold, v.silence_ms, v.min_speech_ms, v.max_utterance_s, timeout_s or v.no_speech_timeout_s)
+        if preroll is None:
+            # Her voice keeps bouncing around the room for a moment after she stops: don't record that.
+            while self.player.busy or time.monotonic() - self.player.last_audio_end < 0.4:
+                await asyncio.sleep(0.05)
+            while not q.empty():
+                q.get_nowait()
         for b in preroll or []:
             ep.feed(b)
         while True:
@@ -175,6 +181,10 @@ class RemoteVoiceClient:
             if kind == "audio":
                 pending_audio = ev
             elif kind == "transcript":
+                if ev.get("ignored"):
+                    self.ui.info(f"(ignored my own voice: {ev.get('heard', '')[:60]})")
+                    self.turn_done.set()
+                    continue
                 self.ui.user(ev.get("text") or "(didn't catch that)")
                 if ev.get("stt_ms") is not None:
                     self.timings["stt_ms"] = ev["stt_ms"]
