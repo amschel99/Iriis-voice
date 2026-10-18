@@ -76,7 +76,9 @@ class Iriis:
         perms = PermissionManager(self.cfg, servers)
         facts = (lambda: [t for _, t in self.memory.all()]) if self.memory else None
         from iriis.agent.conversations import ConversationStore
-        self.agent = Agent(self.cfg, self.llm, self.mcp, perms, facts, store=ConversationStore())
+        self.conversations = ConversationStore(write_behind=True)
+        self.agent = Agent(self.cfg, self.llm, self.mcp, perms, facts, store=self.conversations)
+        self.background.append(asyncio.create_task(self.conversations.run_flusher(self.cfg.memory.flush_interval_s)))
         if self.cfg.permissions.dry_run:
             self.ui.warn("DRY RUN: tool calls are logged but not executed.")
         await warm
@@ -89,6 +91,8 @@ class Iriis:
     async def stop(self) -> None:
         for t in self.background:
             t.cancel()
+        if getattr(self, "conversations", None):
+            await asyncio.to_thread(self.conversations.flush)
         if self.mcp:
             await self.mcp.stop()
         await self.llm.aclose()

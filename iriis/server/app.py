@@ -50,7 +50,7 @@ class Core:
         self.tools = CompositeTools(self.mcp, self.desktop)
         self.db = get_db()
         self.memory = LongTermMemory(self.db) if cfg.memory.enabled else None
-        self.conversations = ConversationStore(self.db)
+        self.conversations = ConversationStore(self.db, write_behind=True)
         self.speech = Speech(cfg)
         # Audit trail: JSONL file + the database (so it survives redeploys on Railway).
         self.audit = AuditLog(cfg.permissions.audit_log, db=self.db, source="cloud")
@@ -91,6 +91,8 @@ class Core:
                 self.voice_sockets.discard(ws)
 
     async def stop(self) -> None:
+        n = await asyncio.to_thread(self.conversations.flush)   # redeploy/shutdown: nothing is lost
+        log.info("flushed %d conversation messages on shutdown", n)
         await self.mcp.stop()
         await self.llm.aclose()
 
@@ -176,6 +178,7 @@ def status_dict(core: Core) -> dict[str, Any]:
         "stt": core.speech.stt_name,
         "tts": core.speech.tts_name,
         "storage": core.db.description,
+        "unsaved_messages": core.conversations.pending,
         "desktop_connected": core.desktop.online,
         "cloud_servers": core.mcp.status(),
         "tools": sum(len(s["tools"]) for s in core.tools.servers_catalog().values()),
@@ -245,9 +248,11 @@ def create_app(cfg: Config | None = None) -> FastAPI:
         app.state.core = core
         await core.start()
         reminders = asyncio.create_task(ReminderWatcher(core.announce, core.db).run())
+        flusher = asyncio.create_task(core.conversations.run_flusher(cfg.memory.flush_interval_s))
         async with mcp.session_manager.run():
             yield
         reminders.cancel()
+        flusher.cancel()
         await core.stop()
 
     app = FastAPI(title="Iriis", version="0.2.0", lifespan=lifespan,

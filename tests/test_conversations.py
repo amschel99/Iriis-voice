@@ -112,3 +112,43 @@ def test_search_conversations_tool(db, monkeypatch):
     out = mem.search_conversations("landlord")
     assert "user: my landlord's name is Mr Kamau" in out
     assert "No past conversation" in mem.search_conversations("zebra")
+
+
+def test_write_behind_buffers_until_flush(db):
+    store = ConversationStore(db, write_behind=True)
+    store.append("owner", "user", "buffered hello")
+    store.append("owner", "assistant", "buffered reply")
+    assert store.pending == 2
+    assert db.execute("SELECT COUNT(*) FROM messages")[0][0] == 0      # nothing written yet
+    assert store.flush() == 2 and store.pending == 0
+    assert db.execute("SELECT COUNT(*) FROM messages")[0][0] == 2
+
+
+def test_reads_flush_first_so_nothing_is_missed(db):
+    store = ConversationStore(db, write_behind=True)
+    store.append("owner", "user", "the matatu fare went up")
+    assert store.search("matatu")                                       # search flushes
+    store.append("owner", "assistant", "Noted.")
+    assert [m["content"] for m in store.recent("owner", 1000)] == ["the matatu fare went up", "Noted."]
+
+
+def test_failed_flush_keeps_messages_for_retry(db, monkeypatch):
+    store = ConversationStore(db, write_behind=True)
+    store.append("owner", "user", "keep me")
+    real = db.executemany
+    monkeypatch.setattr(db, "executemany", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("db down")))
+    assert store.flush() == 0 and store.pending == 1
+    monkeypatch.setattr(db, "executemany", real)
+    assert store.flush() == 1
+
+
+def test_flusher_runs_in_background(db):
+    store = ConversationStore(db, write_behind=True)
+    store.append("owner", "user", "tick")
+
+    async def run():
+        task = asyncio.create_task(store.run_flusher(0.05))
+        await asyncio.sleep(0.3)
+        task.cancel()
+    asyncio.run(run())
+    assert store.pending == 0 and db.execute("SELECT COUNT(*) FROM messages")[0][0] == 1

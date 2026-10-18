@@ -3,22 +3,72 @@ and older context is kept as a rolling summary. "Start over" adds a reset marker
 deleted, so past conversations stay searchable (see the memory server's search_conversations)."""
 from __future__ import annotations
 
+import asyncio
+import logging
 import re
+import threading
 import time
 
 from iriis.agent.memory import estimate_tokens
 from iriis.storage import DB, get_db
 
 OWNER_SESSION = "owner"   # the one ongoing conversation with Iriis' owner (voice + CLI share it)
+log = logging.getLogger("iriis.conversations")
+_INSERT = "INSERT INTO messages (session_id, role, content, created) VALUES (?, ?, ?, ?)"
 
 
 class ConversationStore:
-    def __init__(self, db: DB | None = None):
+    """write_behind=True: append() only buffers in memory (instant); flush() writes the buffer to the
+    database in one batch. A background task flushes every few minutes, and on shutdown (redeploys).
+    Any read flushes first, so this process always sees its own latest messages."""
+
+    MAX_PENDING = 200   # flush early if this many messages pile up
+
+    def __init__(self, db: DB | None = None, write_behind: bool = False):
         self.db = db or get_db()
+        self.write_behind = write_behind
+        self._pending: list[tuple] = []
+        self._lock = threading.Lock()
+        self._flush_lock = threading.Lock()
 
     def append(self, session_id: str, role: str, content: str) -> None:
-        self.db.execute("INSERT INTO messages (session_id, role, content, created) VALUES (?, ?, ?, ?)",
-                        (session_id, role, content, time.time()))
+        row = (session_id, role, content, time.time())
+        if not self.write_behind:
+            self.db.execute(_INSERT, row)
+            return
+        with self._lock:
+            self._pending.append(row)
+            full = len(self._pending) >= self.MAX_PENDING
+        if full:
+            self.flush()
+
+    @property
+    def pending(self) -> int:
+        return len(self._pending)
+
+    def flush(self) -> int:
+        """Write buffered messages in one transaction. On failure they stay buffered for the next try."""
+        with self._flush_lock:
+            with self._lock:
+                rows, self._pending = self._pending, []
+            if not rows:
+                return 0
+            try:
+                self.db.executemany(_INSERT, rows)
+                return len(rows)
+            except Exception as e:  # noqa: BLE001
+                with self._lock:
+                    self._pending = rows + self._pending
+                log.warning("conversation flush failed (%d kept for retry): %s", len(rows), e)
+                return 0
+
+    async def run_flusher(self, interval_s: float) -> None:
+        """Background task: flush every interval_s seconds."""
+        while True:
+            await asyncio.sleep(interval_s)
+            n = await asyncio.to_thread(self.flush)
+            if n:
+                log.info("saved %d conversation messages", n)
 
     def _since_reset(self, session_id: str, limit: int = 400) -> list[tuple]:
         return self.db.execute(
@@ -28,6 +78,7 @@ class ConversationStore:
 
     def recent(self, session_id: str, max_tokens: int) -> list[dict]:
         """Newest messages since the last reset that fit in max_tokens, oldest first, starting on a user turn."""
+        self.flush()
         picked, used = [], 0
         for _id, role, content, _ in self._since_reset(session_id):
             msg = {"role": role, "content": content}
@@ -41,15 +92,18 @@ class ConversationStore:
         return picked
 
     def last_active(self, session_id: str) -> float | None:
+        self.flush()
         rows = self.db.execute("SELECT MAX(created) FROM messages WHERE session_id = ? AND role != 'reset'", (session_id,))
         return float(rows[0][0]) if rows and rows[0][0] is not None else None
 
     def reset(self, session_id: str) -> None:
-        self.append(session_id, "reset", "")
+        self.append(session_id, "reset", "")   # through the buffer, so ordering is kept
         self.db.execute("DELETE FROM conversation_summaries WHERE session_id = ?", (session_id,))
 
     def purge(self, session_id: str) -> None:
         """Really delete a conversation (DELETE /v1/sessions/{id}?purge=true)."""
+        with self._lock:
+            self._pending = [r for r in self._pending if r[0] != session_id]
         self.db.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
         self.db.execute("DELETE FROM conversation_summaries WHERE session_id = ?", (session_id,))
 
@@ -66,6 +120,7 @@ class ConversationStore:
     def search(self, query: str = "", days: float | None = None, session_id: str | None = None,
                limit: int = 12) -> list[tuple[float, str, str, str]]:
         """Past messages matching any of the query's words (newest first): (created, session, role, content)."""
+        self.flush()
         sql = "SELECT created, session_id, role, content FROM messages WHERE role IN ('user', 'assistant')"
         params: list = []
         if days:

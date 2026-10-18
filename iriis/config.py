@@ -110,6 +110,9 @@ class MemoryConfig(BaseModel):
     # Storage is chosen by the environment: DATABASE_URL (Postgres, e.g. Railway) or else
     # SQLite at IRIIS_SQLITE_PATH (default data/iriis.sqlite3). See iriis/storage.py.
     enabled: bool = True
+    # Conversations are buffered in memory and written to the database in one batch this often
+    # (also on shutdown, so redeploys lose nothing). Lower = less lost if the process crashes.
+    flush_interval_s: float = 120.0
 
 
 class FilesConfig(BaseModel):

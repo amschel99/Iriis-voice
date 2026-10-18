@@ -160,6 +160,8 @@ class Agent:
             await cb.say(random.choice(FILLERS))
 
         filler_task = asyncio.create_task(filler()) if confirmed is None else None
+        if self.store and call.name.endswith("__search_conversations"):
+            await asyncio.to_thread(self.store.flush)   # so the newest messages are searchable
         try:
             result = await self.tools.call_tool(call.name, args, confirmed=bool(confirmed))
             error = ""

@@ -84,6 +84,28 @@ class DB:
                         raise
         return []
 
+    def executemany(self, sql: str, rows: list[tuple]) -> None:
+        """One batch, one transaction (used by the conversation write-behind buffer)."""
+        if not rows:
+            return
+        if self.dialect == "sqlite":
+            with sqlite3.connect(self.path, timeout=10) as c:
+                c.executemany(sql, rows)
+            return
+        import psycopg
+        sql = sql.replace("?", "%s")
+        with self._lock:
+            for attempt in (1, 2):
+                try:
+                    conn = self._pg_conn()
+                    with conn.transaction(), conn.cursor() as cur:
+                        cur.executemany(sql, rows)
+                    return
+                except psycopg.OperationalError:
+                    self._pg = None
+                    if attempt == 2:
+                        raise
+
     def insert(self, sql: str, params: tuple | list = ()) -> int:
         return int(self.execute(sql + " RETURNING id", params)[0][0])
 

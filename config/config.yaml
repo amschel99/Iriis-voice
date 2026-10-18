@@ -97,6 +97,7 @@ tool_routing:
 
 memory:
   enabled: true
+  flush_interval_s: 120        # conversations are buffered and saved to the database every 2 minutes (and on shutdown)
   # Where memories, notes, reminders (and the cloud audit log) live is set by the environment:
   # DATABASE_URL=postgresql://... (Railway Postgres) or else SQLite at data/iriis.sqlite3.
 
