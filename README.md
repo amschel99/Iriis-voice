@@ -104,6 +104,8 @@ expressive model that really sounds angry, excited, sarcastic, loving or whisper
 She can use the open-source Orpheus (`canopylabs/orpheus-3b-0.1-ft`) on your own GPU instead of Groq's rate-limited one.
 - **Voices:** tara (hers), leah, jess, mia, zoe, leo, dan, zac.
 - **Emotion:** it comes from her wording, plus real sounds: `<laugh> <chuckle> <sigh> <groan> <gasp> <yawn> <sniffle> <cough>`.
+- **Your endpoint:** `iriis-orpheus` on an L40S in us-east-1. It was created with the Hugging Face API; see the
+  `create_inference_endpoint` settings in this section.
 - **One server, any host:** the voice server (`deploy/orpheus_server/`) is a Docker image that runs on any NVIDIA GPU with 24 GB.
   GitHub builds it on every push to `main` that touches that folder, and publishes it free as
   `ghcr.io/amschel99/iriis-orpheus:latest`. You can also build it by hand from the **Actions** tab ("Orpheus voice image").
@@ -116,7 +118,10 @@ She can use the open-source Orpheus (`canopylabs/orpheus-3b-0.1-ft`) on your own
    https://huggingface.co/settings/tokens.
 3. At https://endpoints.huggingface.co, create a **New endpoint** and choose **Custom container**:
    - **Image:** `ghcr.io/amschel99/iriis-orpheus:latest`, port **80**, health route **/health**
-   - **GPU:** Nvidia **L4** or **A10G** (24 GB). Set **Scale to zero** after 15 minutes idle.
+   - **GPU:** Nvidia **L40S** (about $1.80/h while running). Set **Scale to zero** after 15 minutes idle.
+     Measured speeds (fp8 weights; real time needs about 84 tokens/s):
+     - **L4:** about 2× slower than real time. Too slow for conversation.
+     - **L40S:** about real time (7–9 s of speech in about 7.7 s).
    - **Environment secrets:** `HF_TOKEN=<your read token>` and `ORPHEUS_TOKEN=<a random secret>`
    - **Security:** **Public** is fine, because the server itself requires `ORPHEUS_TOKEN`. If you choose
      **Protected**, also set `IRIIS__TTS__ORPHEUS_HOST_TOKEN_ENV=HF_TOKEN` and `HF_TOKEN` on Railway.

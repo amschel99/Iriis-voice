@@ -2,7 +2,8 @@
 # Built and published by .github/workflows/orpheus-image.yml -> ghcr.io/<owner>/iriis-orpheus:latest
 #
 # Needs at runtime: HF_TOKEN (Hugging Face read token with access to canopylabs/orpheus-3b-0.1-ft)
-#                   ORPHEUS_TOKEN (the secret Iriis sends)          GPU: 24 GB (A10G / L4 / A5000 / 3090 / 4090)
+#                   ORPHEUS_TOKEN (the secret Iriis sends)
+# GPU: >= 24 GB, and fast memory for real-time speech. Measured: L40S about real time; L4 about 2x too slow.
 FROM vllm/vllm-openai:v0.9.2
 
 RUN pip install --no-cache-dir snac==1.2.1 soundfile==0.13.1 hf_transfer==0.1.9 "fastapi[standard]==0.115.14" \
