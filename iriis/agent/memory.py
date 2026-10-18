@@ -13,6 +13,7 @@ class ConversationHistory:
     def __init__(self, max_tokens: int = 5000):
         self.max_tokens = max_tokens
         self.messages: list[dict[str, Any]] = []
+        self.dropped: list[dict[str, Any]] = []   # trimmed-off messages, waiting to be summarised
 
     def add(self, msg: dict[str, Any]) -> None:
         self.messages.append(msg)
@@ -24,6 +25,7 @@ class ConversationHistory:
 
     def reset(self) -> None:
         self.messages.clear()
+        self.dropped.clear()
 
     def trim(self) -> None:
         """Drop the oldest whole turns (a user message plus everything up to the next one)."""
@@ -39,4 +41,5 @@ class ConversationHistory:
                 else:
                     break
                 continue
+            self.dropped.extend(self.messages[:idx])
             del self.messages[:idx]

@@ -357,6 +357,60 @@ def cmd_logs(args) -> None:
                 pass
 
 
+def cmd_mic(args) -> None:
+    """Live mic check: a level meter plus the wake-word score, so you can see what she hears."""
+    import queue
+
+    import numpy as np
+    import sounddevice as sd
+
+    from iriis.audio.devices import resolve_device
+    from iriis.audio.wakeword import WakeWord
+    from iriis.config import load_config
+
+    cfg = load_config()
+    if args.list:
+        from iriis.audio.devices import print_devices
+        print_devices()
+        return
+    dev = resolve_device(args.device if args.device is not None else cfg.audio.input_device, "input")
+    name = sd.query_devices(dev if dev is not None else sd.default.device[0])["name"]
+    ww = WakeWord(cfg.wakeword)
+    q: queue.Queue = queue.Queue()
+    print(f"{BOLD}Mic test{RESET} on: {name}   (wake-word threshold {ww.threshold})")
+    print(f"Say {BOLD}\"Hey Jarvis\"{RESET} a few times, and talk normally. The bar should jump when you speak. Ctrl+C to stop.\n")
+    loudest, hits = 0.0, 0
+    try:
+        with sd.InputStream(samplerate=16000, channels=1, dtype="float32", blocksize=1280, device=dev,
+                            callback=lambda d, f, t, s: q.put(d[:, 0].copy())):
+            end = time.time() + args.seconds
+            while time.time() < end:
+                block = q.get()
+                level = float(np.sqrt(np.mean(block ** 2)))
+                loudest = max(loudest, level)
+                fired = ww.feed(block)
+                bar = "#" * min(40, int(level * 400))
+                score = ww.last_score
+                print(f"\r  level {level:6.3f} |{bar:<40}| wake score {score:4.2f} ", end="", flush=True)
+                if fired:
+                    hits += 1
+                    print(f"\n  {GREEN}{BOLD}WAKE WORD DETECTED{RESET} (score {score:.2f})")
+                    ww.reset()
+    except KeyboardInterrupt:
+        pass
+    print("\n")
+    if loudest < 0.005:
+        print(f"{RED}She heard (almost) nothing.{RESET} Unmute the mic (laptop mic key / Settings > System > Sound > Input),"
+              " or try another device: `iriis mic --list`, then `iriis mic --device <number>`.")
+    elif hits == 0:
+        print(f"{YELLOW}She hears you, but the wake word never fired.{RESET} Say \"Hey Jarvis\" (not \"Iriis\" yet), a bit slower,"
+              " or lower wakeword.threshold to 0.35 in config/config.yaml. Or use push-to-talk: `iriis restart --push-to-talk` (hold F9).")
+    else:
+        print(f"{GREEN}All good:{RESET} the wake word fired {hits} time(s). If she still doesn't respond, run `iriis restart`.")
+    if args.device is not None:
+        print(f"To make this mic permanent, set  audio.input_device: {args.device}  in config/config.yaml, then `iriis restart`.")
+
+
 def cmd_server(args) -> None:
     sys.exit(subprocess.call([sys.executable, "-m", "iriis.server"], cwd=str(ROOT)))
 
@@ -380,7 +434,7 @@ def main() -> None:
     sp = sub.add_parser("ask", help="ask her something")
     sp.add_argument("text", nargs="+")
     sp.add_argument("--speak", action="store_true", help="play her spoken reply")
-    sp.add_argument("--session", default="cli", help="conversation id (default: cli)")
+    sp.add_argument("--session", default="owner", help="conversation id (default: owner, shared with voice)")
     sp.add_argument("-v", "--verbose", action="store_true", help="show tool calls and timings")
     sp.set_defaults(fn=cmd_ask)
     sp = sub.add_parser("say", help="have her say something")
@@ -390,6 +444,11 @@ def main() -> None:
     sp.add_argument("-f", "--follow", action="store_true")
     sp.add_argument("-n", "--lines", type=int, default=40)
     sp.set_defaults(fn=cmd_logs)
+    sp = sub.add_parser("mic", help="live mic + wake-word test")
+    sp.add_argument("--device", help="input device number or name (see --list)")
+    sp.add_argument("--list", action="store_true", help="list audio devices")
+    sp.add_argument("--seconds", type=float, default=30)
+    sp.set_defaults(fn=cmd_mic)
     sub.add_parser("server", help="run the cloud core locally (development)").set_defaults(fn=cmd_server)
     args = p.parse_args()
     try:

@@ -21,6 +21,7 @@ from mcp.server.mcpserver.utilities.types import Audio  # module level: MCP eval
 from pydantic import BaseModel, Field
 
 from iriis.agent.loop import Agent
+from iriis.agent.conversations import ConversationStore
 from iriis.agent.longterm import LongTermMemory
 from iriis.agent.permissions import AuditLog, PermissionManager
 from iriis.agent.reminders import ReminderWatcher
@@ -49,6 +50,7 @@ class Core:
         self.tools = CompositeTools(self.mcp, self.desktop)
         self.db = get_db()
         self.memory = LongTermMemory(self.db) if cfg.memory.enabled else None
+        self.conversations = ConversationStore(self.db)
         self.speech = Speech(cfg)
         # Audit trail: JSONL file + the database (so it survives redeploys on Railway).
         self.audit = AuditLog(cfg.permissions.audit_log, db=self.db, source="cloud")
@@ -57,9 +59,10 @@ class Core:
         self.problems: list[str] = []
         self.started = time.time()
 
-    def _make_agent(self) -> Agent:
+    def _make_agent(self, session_id: str) -> Agent:
         facts = (lambda: [t for _, t in self.memory.all()]) if self.memory else None
-        agent = Agent(self.cfg, self.llm, self.tools, self.permissions, facts)
+        agent = Agent(self.cfg, self.llm, self.tools, self.permissions, facts,
+                      store=self.conversations, session_id=session_id)
         agent.audit = self.audit
         return agent
 
@@ -323,8 +326,12 @@ def create_app(cfg: Config | None = None) -> FastAPI:
         return {"ok": True}
 
     @app.delete("/v1/sessions/{session_id}", dependencies=[Depends(require_key)])
-    async def reset_session(session_id: str, request: Request):
-        return {"ok": request.app.state.core.sessions.drop(session_id)}
+    async def reset_session(session_id: str, request: Request, purge: bool = False):
+        """Start over (saved history stays searchable), or with ?purge=true delete it for good."""
+        core: Core = request.app.state.core
+        core.sessions.drop(session_id)
+        await asyncio.to_thread(core.conversations.purge if purge else core.conversations.reset, session_id)
+        return {"ok": True, "purged": purge}
 
 
     @app.post("/v1/tts", dependencies=[Depends(require_key)])
@@ -431,6 +438,7 @@ def create_app(cfg: Config | None = None) -> FastAPI:
                 elif kind == "interrupt":
                     interrupt()
                 elif kind == "reset":
+                    await asyncio.to_thread(core.conversations.reset, session.id)
                     core.sessions.drop(session.id)
                     session = core.sessions.get(session.id)
                     await emit({"type": "reset"}, None)

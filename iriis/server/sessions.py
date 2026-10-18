@@ -36,7 +36,7 @@ class Session:
 
 
 class SessionStore:
-    def __init__(self, make_agent: Callable[[], Agent], max_sessions: int = 200):
+    def __init__(self, make_agent: Callable[[str], Agent], max_sessions: int = 200):
         self.make_agent = make_agent
         self.max_sessions = max_sessions
         self.sessions: OrderedDict[str, Session] = OrderedDict()
@@ -45,7 +45,7 @@ class SessionStore:
         sid = session_id or uuid.uuid4().hex[:12]
         s = self.sessions.get(sid)
         if s is None:
-            s = Session(sid, self.make_agent())
+            s = Session(sid, self.make_agent(sid))   # reloads that conversation's saved context
             self.sessions[sid] = s
             while len(self.sessions) > self.max_sessions:
                 old_id, old = next(iter(self.sessions.items()))

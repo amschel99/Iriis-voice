@@ -9,6 +9,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Protocol
 
+from iriis.agent.conversations import OWNER_SESSION, SUMMARY_PROMPT, ConversationStore, format_dialogue
 from iriis.agent.memory import ConversationHistory
 from iriis.agent.permissions import AuditLog, PermissionManager, describe_call, is_affirmative, redact_secrets
 from iriis.agent.tool_router import ToolRouter
@@ -48,7 +49,8 @@ class TurnResult:
 
 class Agent:
     def __init__(self, cfg: Config, llm: LLMClient, tools: ToolProvider | None,
-                 permissions: PermissionManager, memory_facts: Callable[[], list[str]] | None = None):
+                 permissions: PermissionManager, memory_facts: Callable[[], list[str]] | None = None,
+                 store: ConversationStore | None = None, session_id: str = OWNER_SESSION):
         self.cfg = cfg
         self.llm = llm
         self.tools = tools
@@ -57,6 +59,19 @@ class Agent:
         self.router = ToolRouter(cfg.tool_routing.max_tools, cfg.tool_routing.method)
         self.history = ConversationHistory(cfg.llm.history_max_tokens)
         self.memory_facts = memory_facts or (lambda: [])
+        # Persistent conversation: reload recent context (survives restarts and redeploys).
+        self.store = store
+        self.session_id = session_id
+        self.summary = ""
+        self.last_active: float | None = None
+        self._summarizing: asyncio.Task | None = None
+        if store:
+            try:
+                self.history.messages = store.recent(session_id, cfg.llm.history_max_tokens)
+                self.summary = store.summary(session_id)
+                self.last_active = store.last_active(session_id)
+            except Exception:  # noqa: BLE001  (database down: start with empty context)
+                pass
 
     # ------------------------------------------------------------------ helpers
 
@@ -66,7 +81,38 @@ class Agent:
         except Exception:
             facts = []
         return {"role": "system", "content": build_system_prompt(
-            self.cfg.assistant_name, self.cfg.user_name, self.cfg.location, self.cfg.timezone, facts)}
+            self.cfg.assistant_name, self.cfg.user_name, self.cfg.location, self.cfg.timezone, facts,
+            conversation_summary=self.summary, last_active=self.last_active)}
+
+    # ------------------------------------------------------------------ persistence
+
+    def _save(self, user_text: str, reply: str) -> None:
+        if not self.store:
+            return
+        try:
+            self.store.append(self.session_id, "user", user_text)
+            self.store.append(self.session_id, "assistant", reply)
+        except Exception:  # noqa: BLE001  (never lose a turn because the DB hiccuped)
+            pass
+
+    def _maybe_summarize(self) -> None:
+        """Fold messages that fell out of the context window into the rolling summary (background)."""
+        if not self.store or len(self.history.dropped) < 4 or (self._summarizing and not self._summarizing.done()):
+            return
+        dropped, self.history.dropped = self.history.dropped, []
+
+        async def run():
+            prompt = SUMMARY_PROMPT.format(name=self.cfg.assistant_name, summary=self.summary or "(none yet)",
+                                           dialogue=format_dialogue(dropped))
+            try:
+                text = (await self.llm.complete([{"role": "user", "content": prompt}])).strip()
+                if text:
+                    self.summary = text
+                    await asyncio.to_thread(self.store.set_summary, self.session_id, text)
+            except Exception:  # noqa: BLE001
+                self.history.dropped = dropped + self.history.dropped   # retry next turn
+
+        self._summarizing = asyncio.get_running_loop().create_task(run())
 
     async def _llm_pick_servers(self, query: str, catalog: dict[str, str]) -> list[str]:
         listing = "\n".join(f"{n}: {d}" for n, d in catalog.items())
@@ -139,6 +185,12 @@ class Agent:
 
         if RESET_RE.match(user_text):
             self.history.reset()
+            self.summary, self.last_active = "", None
+            if self.store:
+                try:
+                    self.store.reset(self.session_id)
+                except Exception:  # noqa: BLE001
+                    pass
             await cb.say("Okay, starting a new conversation.")
             return result
         if RELOAD_RE.match(user_text) and self.tools:
@@ -160,6 +212,7 @@ class Agent:
             # Keep only the user's words: a half-finished tool exchange would be rejected by
             # OpenAI-style APIs on the next turn (every tool call needs its result).
             self.history.extend([turn[0], {"role": "assistant", "content": "(interrupted by the user)"}])
+            self._save(user_text, "(interrupted by the user)")
             raise
 
     async def _run(self, turn, tools, known, cb, result, t0) -> TurnResult:
@@ -212,5 +265,8 @@ class Agent:
             await cb.say("Sorry, I couldn't finish that within my step limit.")
 
         self.history.extend(turn)
+        self._save(turn[0]["content"], result.text or "(no reply)")
+        self.last_active = time.time()
+        self._maybe_summarize()
         result.timings["total_ms"] = (time.perf_counter() - t0) * 1000
         return result

@@ -38,7 +38,9 @@ Example client config: `{"mcpServers": {"iriis": {"type": "http", "url": "{BASE_
 - `POST /v1/confirm` `{"session_id", "id", "approved": true|false}` or `{"session_id", "text": "yes go ahead"}`
 - `POST /v1/tts` `{"text", "voice"?}` -> `audio/wav`
 - `POST /v1/stt` multipart `file=<wav/flac/ogg>` -> `{"text", "duration_s", "elapsed_ms"}` (accent-tuned Whisper)
-- `DELETE /v1/sessions/{session_id}` resets a conversation.
+- `DELETE /v1/sessions/{session_id}` starts the conversation over; `?purge=true` deletes its saved history.
+- Conversations persist in the database, keyed by `session_id`, and survive restarts. `owner` is the owner's
+  personal conversation (shared with voice and the CLI). Use your own `session_id` per app or user.
 - `GET /v1/status` returns health, models, desktop link and tool count.
 - `GET /docs` is the OpenAPI UI.
 

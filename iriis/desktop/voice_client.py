@@ -228,7 +228,7 @@ class RemoteVoiceClient:
         while True:
             try:
                 async with connect(url, additional_headers=headers, max_size=32 * 1024 * 1024, ping_interval=20) as ws:
-                    await ws.send(json.dumps({"type": "hello", "session_id": "desktop-voice", "speak": True}))
+                    await ws.send(json.dumps({"type": "hello", "session_id": "owner", "speak": True}))
                     ready = json.loads(await ws.recv())
                     self.ws = ws
                     write_status(voice_connected=True, stt=ready.get("stt"), tts=ready.get("tts"))

@@ -80,6 +80,15 @@ echo 'export PATH="$PATH:/c/Users/ADMIN/rift/iriis-voice/bin"' >> ~/.bashrc && s
 | `iriis stop` / `iriis restart` | Stops or restarts the background process |
 | `iriis server` | Runs the brain locally (development) |
 
+**She remembers your conversations.** Everything you say (by voice or `iriis ask`) and her replies are
+saved to the database. Voice and the CLI share one ongoing conversation ("owner"), so she knows what you
+were talking about whichever way you reach her, even after restarts and redeploys.
+- **Recent context:** recent messages go into her context.
+- **Older context:** older parts are folded into a running summary, so long conversations don't get forgotten.
+- **Searching back:** she can look through past conversations ("what did I tell you last week about the plumber?").
+- **"Start over":** begins fresh context, but the old conversation stays searchable.
+- **Deleting for good:** `DELETE /v1/sessions/owner?purge=true` erases a conversation entirely.
+
 **When the link drops:** she says "I've lost connection to my brain. I'll keep trying to reconnect." and
 reconnects on her own (backoff of up to 30 s). If you talk to her while she's disconnected, she answers with her
 on-device voice: "Sorry, I'm not connected to my brain right now…". When the link comes back she says
@@ -162,7 +171,8 @@ The stream sends these events in order:
 **Other endpoints:**
 - `POST /v1/tts {"text"}` returns WAV.
 - `POST /v1/stt` takes a multipart `file` and returns the text, using the accent-tuned model.
-- `DELETE /v1/sessions/{id}` resets a conversation.
+- `DELETE /v1/sessions/{id}` starts the conversation over (history stays searchable); add `?purge=true` to delete it.
+- Sessions are saved in the database and survive restarts. `session_id: "owner"` is your own conversation, shared with voice and the CLI. Other apps should use their own ids.
 
 **MCP:** Iriis is itself an MCP server at `https://<domain>/mcp` (streamable HTTP). It offers three tools:
 - `ask_iriis` sends a request and returns the reply.

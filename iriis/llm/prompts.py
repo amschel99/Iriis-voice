@@ -23,7 +23,8 @@ Security (very important):
 {memory}Today is {now}. For the exact current time, use the time tool."""
 
 
-def build_system_prompt(name: str, user: str, location: str, tz: str, memory_facts: list[str] | None = None) -> str:
+def build_system_prompt(name: str, user: str, location: str, tz: str, memory_facts: list[str] | None = None,
+                        conversation_summary: str = "", last_active: float | None = None) -> str:
     try:
         from zoneinfo import ZoneInfo
         now = _dt.datetime.now(ZoneInfo(tz))
@@ -32,6 +33,15 @@ def build_system_prompt(name: str, user: str, location: str, tz: str, memory_fac
     memory = ""
     if memory_facts:
         memory = "Things the user asked you to remember:\n" + "\n".join(f"- {f}" for f in memory_facts[:30]) + "\n\n"
+    if conversation_summary:
+        memory += ("Your conversation with the user is ongoing. Summary of the earlier parts that are no longer "
+                   "shown below:\n" + conversation_summary.strip() + "\n\n")
+    if last_active:
+        gap_h = (now.timestamp() - last_active) / 3600
+        if gap_h >= 1:
+            when = _dt.datetime.fromtimestamp(last_active, now.tzinfo).strftime("%A %d %B at %H:%M")
+            memory += (f"The previous messages below are from {when}, so this is a new sitting; don't treat "
+                       "them as moments ago. Use them for context; to look further back, search past conversations.\n\n")
     return SYSTEM_PROMPT.format(
         name=name, user=user or "the user", location=location, tz=tz, memory=memory,
         now=now.strftime("%A %d %B %Y"),  # date only, so the prompt prefix stays cacheable

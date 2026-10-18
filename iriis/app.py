@@ -75,7 +75,8 @@ class Iriis:
             self.ui.info(f"{len(self.mcp.all_tools())} tools available")
         perms = PermissionManager(self.cfg, servers)
         facts = (lambda: [t for _, t in self.memory.all()]) if self.memory else None
-        self.agent = Agent(self.cfg, self.llm, self.mcp, perms, facts)
+        from iriis.agent.conversations import ConversationStore
+        self.agent = Agent(self.cfg, self.llm, self.mcp, perms, facts, store=ConversationStore())
         if self.cfg.permissions.dry_run:
             self.ui.warn("DRY RUN: tool calls are logged but not executed.")
         await warm

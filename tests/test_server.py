@@ -202,3 +202,19 @@ def test_declined_confirmation_never_reaches_desktop(monkeypatch, tmp_path):
     assert received == []
     tool_msgs = [m for m in fake.seen[-1] if m["role"] == "tool"]
     assert "DECLINED" in tool_msgs[0]["content"]
+
+
+def test_owner_conversation_survives_server_restart(monkeypatch, tmp_path):
+    client, _ = make_client(monkeypatch, ["Noted, Thursday it is."], tmp_path)
+    with client:
+        client.post("/v1/chat", json={"message": "the plumber comes on Thursday", "session_id": "owner", "stream": False}, headers=AUTH)
+    # A brand-new server process (same database) must still have the context.
+    client2, fake2 = make_client(monkeypatch, ["Thursday."], tmp_path)
+    with client2:
+        r = client2.post("/v1/chat", json={"message": "when is the plumber coming?", "session_id": "owner", "stream": False}, headers=AUTH)
+        # ...and ?purge=true really forgets it
+        assert client2.delete("/v1/sessions/owner?purge=true", headers=AUTH).json() == {"ok": True, "purged": True}
+        assert client2.app.state.core.conversations.search("plumber") == []
+    users = [m["content"] for m in fake2.seen[-1] if m["role"] == "user"]
+    assert users == ["the plumber comes on Thursday", "when is the plumber coming?"]
+    assert r.json()["session_id"] == "owner"

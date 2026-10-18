@@ -78,8 +78,8 @@ mcpServers:
     command: python
     args: ["-m", "servers.memory"]
     tier: auto
-    description: Long-term facts the user asked to remember; save, recall or forget them.
-    keywords: [remember, recall, forget, memory, my]
+    description: Long-term facts the user asked to remember (save, recall, forget) and search of past conversations.
+    keywords: [remember, recall, forget, memory, my, conversation, talked, said, told, earlier, yesterday, last, week, discussed, mentioned]
 
   # ------------------------------------------------------------------------------------------
   # Optional third-party servers (disabled). Install their runtimes first; see README §MCP.

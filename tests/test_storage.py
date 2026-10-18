@@ -13,21 +13,6 @@ from iriis.agent.permissions import AuditLog
 from iriis.agent.reminders import ReminderWatcher
 from iriis.storage import DB
 
-PG_URL = os.environ.get("IRIIS_TEST_PG_URL", "")
-
-
-@pytest.fixture(params=["sqlite", "postgres"])
-def db(request, tmp_path):
-    if request.param == "sqlite":
-        return DB("", tmp_path / "t.sqlite3")
-    if not PG_URL:
-        pytest.skip("set IRIIS_TEST_PG_URL to run the Postgres variant")
-    d = DB(PG_URL)
-    for t in ("facts", "notes", "reminders", "audit_log"):
-        d.execute(f"DELETE FROM {t}")
-    return d
-
-
 def test_schema_is_idempotent(db):
     DB(db.url, db.path)  # second init must not fail
     assert db.execute("SELECT COUNT(*) FROM facts")[0][0] == 0
