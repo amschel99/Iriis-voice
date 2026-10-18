@@ -28,6 +28,7 @@ class WakeWordConfig(BaseModel):
     model: str = "hey_jarvis"
     threshold: float = 0.5
     push_to_talk_key: str = "f9"
+    followup_s: float = 10.0     # after she answers, keep listening this long without needing the wake word
 
 
 class VADConfig(BaseModel):
@@ -35,7 +36,7 @@ class VADConfig(BaseModel):
     silence_ms: int = 1200
     min_speech_ms: int = 250
     max_utterance_s: float = 20.0
-    no_speech_timeout_s: float = 6.0
+    no_speech_timeout_s: float = 8.0
 
 
 class STTConfig(BaseModel):

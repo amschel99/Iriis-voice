@@ -279,13 +279,19 @@ class RemoteVoiceClient:
             if preroll is None:
                 await self._trigger()
                 followup = time.monotonic() < self.followup_until or self.awaiting_confirm
-                audio = await self._record(timeout_s=(8.0 if self.awaiting_confirm else 4.0) if followup else None)
+                wait = 8.0 if self.awaiting_confirm else self.cfg.wakeword.followup_s
+                audio = await self._record(timeout_s=wait if followup else None)
             else:
                 audio, preroll = await self._record(preroll=preroll), None
             self.followup_until = 0.0
             if audio is None:
                 if self.awaiting_confirm and self.ws is not None:
                     await self.ws.send(json.dumps({"type": "confirm_reply", "approved": False}))
+                elif self.cfg.wakeword.mode == "wakeword":
+                    # Falling tone: "I've stopped listening; say Hey Jarvis to talk again."
+                    if self.cfg.audio.chime:
+                        self.player.play(chime(OUT_SR, rising=False), OUT_SR)
+                    self.ui.info("(stopped listening: say 'Hey Jarvis' to talk again)")
                 continue
             if self.ws is None:
                 self.ui.warn("Not connected to my brain")
@@ -304,4 +310,4 @@ class RemoteVoiceClient:
             if not self.awaiting_confirm:
                 self.ui.latency({k: v for k, v in self.timings.items() if k != "first_audio"})
                 if preroll is None:
-                    self.followup_until = time.monotonic() + 5.0
+                    self.followup_until = time.monotonic() + 1.0   # go straight into the follow-up window
