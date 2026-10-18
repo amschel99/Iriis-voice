@@ -106,7 +106,7 @@ mcpServers:
     needs_internet: true
     command: npx
     # Its own browser profile: she is NOT logged into your accounts unless you log in inside her window.
-    args: ["-y", "@playwright/mcp@0.0.83", "--browser", "chrome"]
+    args: ["-y", "@playwright/mcp@0.0.83", "--browser", "chrome", "--output-dir", "data/playwright"]
     tier: auto             # navigate, read, click, type, tabs...
     tools:
       browser_fill_form: confirm
