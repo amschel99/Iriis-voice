@@ -32,7 +32,7 @@ class WakeWordConfig(BaseModel):
 
 class VADConfig(BaseModel):
     threshold: float = 0.5
-    silence_ms: int = 700
+    silence_ms: int = 1200
     min_speech_ms: int = 250
     max_utterance_s: float = 20.0
     no_speech_timeout_s: float = 6.0
@@ -59,7 +59,7 @@ class LLMConfig(BaseModel):
     base_url: str = "https://api.groq.com/openai/v1"   # used by backend: openai
     api_key_env: str = "GROQ_API_KEY"                   # name of the env var holding the key
     reasoning_effort: str | None = "low"                 # gpt-oss on Groq: low = fastest first token
-    max_tokens: int = 1024
+    max_tokens: int = 2048
     model: str = "openai/gpt-oss-120b"
     fallback_model: str = "openai/gpt-oss-20b"
     offline_model: str = "qwen3:4b-instruct-2507-q4_K_M"

@@ -224,13 +224,16 @@ class Agent:
 
     async def _run(self, turn, tools, known, cb, result, t0) -> TurnResult:
         first_token_seen = False
-        for _iteration in range(self.cfg.llm.max_tool_iterations + 1):
-            messages = [self._system(), *self.history.messages, *turn]
+        nudged = False          # retried once after an empty reply
+        nudge: list[dict[str, Any]] = []
+        for _iteration in range(self.cfg.llm.max_tool_iterations + 2):
+            messages = [self._system(), *self.history.messages, *turn, *nudge]
             chunker = SentenceChunker()
             full_text = ""
             spoken_upto_screen = True  # False once we hit the SCREEN: marker
             calls: list[ToolCall] = []
-            offer_tools = tools if _iteration < self.cfg.llm.max_tool_iterations else None
+            offer_tools = tools if (_iteration < self.cfg.llm.max_tool_iterations and not nudged) else None
+            finish = ""
             async for ev in self.llm.chat_stream(messages, offer_tools):
                 if ev.text:
                     if not first_token_seen:
@@ -250,12 +253,27 @@ class Agent:
                             await cb.say(sentence)
                 if ev.done:
                     calls = ev.tool_calls
+                    finish = str((ev.stats or {}).get("finish_reason", ""))
             tail = chunker.flush()
             if tail and not SCREEN_MARKER.search(tail):
                 await cb.say(tail)
             m = SCREEN_MARKER.search(full_text)
             if m:
                 cb.show("screen", full_text[m.end():].strip())
+
+            if not calls and not full_text.strip():
+                # The model came back empty (it happens after tool calls, or when it spends its token
+                # budget thinking). Never leave the user in silence: ask once more without tools.
+                import logging
+                logging.getLogger("iriis.agent").warning("empty LLM reply (finish_reason=%r, nudged=%s)", finish, nudged)
+                result.timings["empty_replies"] = result.timings.get("empty_replies", 0) + 1
+                if not nudged:
+                    nudged = True
+                    nudge = [{"role": "user", "content": "(Your last reply was empty. Answer my request above now, "
+                                                         "in plain spoken English. Don't call any tools.)"}]
+                    continue
+                full_text = "Sorry, I lost my train of thought there. Could you ask me that again?"
+                await cb.say(full_text)
 
             if not calls:
                 spoken = SCREEN_MARKER.split(full_text)[0].strip()

@@ -160,3 +160,44 @@ def test_system_prompt_always_renders():
     p = build_system_prompt("Iriis", "Amschel", "Nairobi, Kenya", "Africa/Nairobi", ["gym at Sarit"],
                             conversation_summary="planning a Mombasa trip", last_active=time.time() - 7200)
     assert "You are Iriis" in p and "{hannah}" in p and "gym at Sarit" in p and "new sitting" in p
+
+
+class SequenceLLM(LLMClient):
+    """Plays a list of replies in order; "" = an empty reply. Records whether tools were offered."""
+    def __init__(self, replies):
+        self.model, self.replies, self.offered = "fake", list(replies), []
+
+    async def chat_stream(self, messages, tools=None, model=None):
+        self.offered.append(bool(tools))
+        r = self.replies.pop(0) if self.replies else ""
+        if r:
+            yield LLMEvent(text=r)
+        yield LLMEvent(done=True, stats={"finish_reason": "stop"})
+
+    async def health(self):
+        return True, "ok"
+
+
+def _say_and_collect(agent, text):
+    spoken = []
+    async def say(s):
+        spoken.append(s)
+    async def nop(*_):
+        return ""
+    r = asyncio.run(agent.handle(text, TurnCallbacks(say=say, confirm=nop)))
+    return r, spoken
+
+
+def test_empty_reply_is_retried_without_tools(db, tmp_path):
+    llm = SequenceLLM(["", "Phase change materials absorb heat as they melt."])
+    a = make_agent(db, tmp_path, llm)
+    r, spoken = _say_and_collect(a, "how do phase change materials work?")
+    assert r.text.startswith("Phase change materials") and spoken
+    assert llm.offered[1] is False                      # the retry offers no tools
+    assert "empty" not in " ".join(m["content"] for m in a.history.messages if m["role"] == "user")  # nudge not saved
+
+
+def test_never_silent_even_if_retry_is_empty(db, tmp_path):
+    a = make_agent(db, tmp_path, SequenceLLM(["", ""]))
+    r, spoken = _say_and_collect(a, "hello?")
+    assert "ask me that again" in r.text and spoken

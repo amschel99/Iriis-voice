@@ -99,9 +99,11 @@ class OpenAICompatClient(LLMClient):
                     break
                 chunk = json.loads(data)
                 if chunk.get("usage") or (chunk.get("x_groq") or {}).get("usage"):
-                    stats = chunk.get("usage") or chunk["x_groq"]["usage"]
+                    stats.update(chunk.get("usage") or chunk["x_groq"]["usage"])
                 if not chunk.get("choices"):
                     continue
+                if chunk["choices"][0].get("finish_reason"):
+                    stats["finish_reason"] = chunk["choices"][0]["finish_reason"]
                 delta = chunk["choices"][0].get("delta") or {}
                 if delta.get("content"):
                     yield LLMEvent(text=delta["content"])
