@@ -75,7 +75,8 @@ echo 'export PATH="$PATH:/c/Users/ADMIN/rift/iriis-voice/bin"' >> ~/.bashrc && s
 | `iriis start` | Starts her in the background (desktop tools + wake word + voice) and reports whether she reached her brain. Flags: `--no-voice`, `--push-to-talk`, `--quiet` |
 | `iriis status` | Shows whether she's running, whether her brain on Railway is online, and whether this PC is linked to it. Ends with her own one-liner, e.g. "I'm connected to my brain and ready." or "I'm not connected to my brain right now: …". `--say` speaks it too. Exit code 0 = all good |
 | `iriis ask "…"` | Asks her something from the terminal and streams the reply. `--speak` plays her voice; `-v` shows tool calls and timings |
-| `iriis say "…"` | She says it out loud (her cloud voice, or her on-device voice when offline) |
+| `iriis say "…"` | She says it out loud, word for word, however long (her cloud voice, or her on-device voice when offline) |
+| `iriis say -f rant.txt` | Long or multi-line text from a file. `ask` takes `-f` too |
 | `iriis logs [-f]` | Shows the background log (`logs/desktop.out`) |
 | `iriis stop` / `iriis restart` | Stops or restarts the background process |
 | `iriis server` | Runs the brain locally (development) |
@@ -88,6 +89,17 @@ were talking about whichever way you reach her, even after restarts and redeploy
 - **Searching back:** she can look through past conversations ("what did I tell you last week about the plumber?").
 - **"Start over":** begins fresh context, but the old conversation stays searchable.
 - **Deleting for good:** `DELETE /v1/sessions/owner?purge=true` erases a conversation entirely.
+
+**Pasting long or multi-line text in Git Bash:** don't wrap it in `"…"`. Bash sends only the first line,
+and `!` inside double quotes triggers history expansion. Use a heredoc instead; everything between the markers
+is passed exactly:
+```bash
+iriis say <<'EOF'
+Can you PLEASE explain to me what is wrong with you?!
+...the whole thing, any length...
+EOF
+```
+The same works for `iriis ask` ("say this angrily: …"). She performs the request in full instead of summarising it.
 
 **When the link drops:** she says "I've lost connection to my brain. I'll keep trying to reconnect." and
 reconnects on her own (backoff of up to 30 s). If you talk to her while she's disconnected, she answers with her

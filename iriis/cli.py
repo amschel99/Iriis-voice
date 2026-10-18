@@ -258,15 +258,55 @@ def _play_wav(data: bytes) -> None:
     sd.wait()
 
 
+def _chunks(text: str, max_chars: int = 220) -> list[str]:
+    """Split long text into sentence-sized pieces (so speech starts fast and nothing is cut off)."""
+    from iriis.llm.sentences import SentenceChunker
+    c = SentenceChunker(first_chunk_chars=10_000)
+    pieces = c.push(text.replace("\r", "") + "\n\n")
+    tail = c.flush()
+    if tail:
+        pieces.append(tail)
+    out: list[str] = []
+    for p in (x.strip() for x in pieces if x.strip()):
+        while len(p) > max_chars:   # very long sentence: break at a comma or space
+            cut = max(p.rfind(", ", 0, max_chars), p.rfind(" ", 0, max_chars))
+            cut = cut if cut > 40 else max_chars
+            out.append(p[:cut + 1].strip())
+            p = p[cut + 1:].strip()
+        if p:
+            out.append(p)
+    return out
+
+
 def _speak(text: str, online: bool = True) -> None:
+    """Say ALL of the text: sentence by sentence, fetching the next one while the current one plays."""
+    import concurrent.futures as cf
+
     import httpx
+    pieces = _chunks(text)
+    if not pieces:
+        return
     if online:
+        client = httpx.Client(timeout=60)
+
+        def fetch(piece: str) -> bytes | None:
+            r = client.post(_server_url() + "/v1/tts", json={"text": piece}, headers=_auth())
+            return r.content if r.status_code == 200 else None
+
         try:
-            r = httpx.post(_server_url() + "/v1/tts", json={"text": text}, headers=_auth(), timeout=60)
-            if r.status_code == 200:
-                _play_wav(r.content)
-                return
-        except Exception:  # noqa: BLE001
+            with cf.ThreadPoolExecutor(max_workers=2) as pool:
+                futures = [pool.submit(fetch, pieces[0])]
+                for i in range(len(pieces)):
+                    if i + 1 < len(pieces):
+                        futures.append(pool.submit(fetch, pieces[i + 1]))
+                    wav = futures[i].result()
+                    if wav is None:
+                        raise RuntimeError("tts failed")
+                    _play_wav(wav)
+            return
+        except KeyboardInterrupt:
+            return
+        except Exception:  # noqa: BLE001  (fall back to the on-device voice)
             pass
     # Offline: on-device voice.
     from iriis.config import load_config
@@ -277,16 +317,32 @@ def _speak(text: str, online: bool = True) -> None:
     for backend in (cfg.tts.backend, "piper"):
         try:
             tts = make_tts(cfg.tts, backend)
-            sd.play(tts.synthesize(normalize(text)), tts.sample_rate)
-            sd.wait()
+            for piece in pieces:
+                sd.play(tts.synthesize(normalize(piece)), tts.sample_rate)
+                sd.wait()
+            return
+        except KeyboardInterrupt:
             return
         except Exception:  # noqa: BLE001
             continue
 
 
+def _read_text(args) -> str:
+    """Text from the arguments, a file (-f), or stdin (`-`, or a pipe / heredoc)."""
+    if getattr(args, "file", None):
+        return Path(args.file).read_text(encoding="utf-8")
+    words = list(args.text or [])
+    if words == ["-"] or (not words and not sys.stdin.isatty()):
+        return sys.stdin.read()
+    if not words:
+        sys.exit("Give me some text, a file (-f notes.txt), or pipe it in:  iriis say <<'EOF' ... EOF")
+    return " ".join(words)
+
+
 def cmd_say(args) -> None:
+    text = _read_text(args)
     ok, _, _ = _check_brain()
-    _speak(" ".join(args.text), online=ok)
+    _speak(text, online=ok)
 
 
 def cmd_ask(args) -> None:
@@ -296,7 +352,7 @@ def cmd_ask(args) -> None:
         iriis_says(f"I'm not connected to my brain right now ({summary}).")
         sys.exit(1)
     url = _server_url()
-    body = {"message": " ".join(args.text), "session_id": args.session, "stream": True, "speak": args.speak}
+    body = {"message": _read_text(args), "session_id": args.session, "stream": True, "speak": args.speak}
     clips: list[bytes] = []
     printed_name = False
     with httpx.Client(timeout=httpx.Timeout(180, connect=10)) as client:
@@ -432,13 +488,15 @@ def main() -> None:
     sp.add_argument("--say", action="store_true", help="also say it out loud")
     sp.set_defaults(fn=cmd_status)
     sp = sub.add_parser("ask", help="ask her something")
-    sp.add_argument("text", nargs="+")
+    sp.add_argument("text", nargs="*", help="your message; or use -f FILE, or pipe/heredoc it in")
+    sp.add_argument("-f", "--file", help="read the message from a text file")
     sp.add_argument("--speak", action="store_true", help="play her spoken reply")
     sp.add_argument("--session", default="owner", help="conversation id (default: owner, shared with voice)")
     sp.add_argument("-v", "--verbose", action="store_true", help="show tool calls and timings")
     sp.set_defaults(fn=cmd_ask)
-    sp = sub.add_parser("say", help="have her say something")
-    sp.add_argument("text", nargs="+")
+    sp = sub.add_parser("say", help="have her say something, word for word")
+    sp.add_argument("text", nargs="*", help="text to say; or use -f FILE, or pipe/heredoc it in")
+    sp.add_argument("-f", "--file", help="read the text from a file")
     sp.set_defaults(fn=cmd_say)
     sp = sub.add_parser("logs", help="show the background agent's log")
     sp.add_argument("-f", "--follow", action="store_true")

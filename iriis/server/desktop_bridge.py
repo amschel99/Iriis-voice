@@ -51,14 +51,21 @@ class DesktopBridge:
         self.catalog = msg.get("catalog", {})
 
     async def attach(self, ws) -> None:
-        """Serve one desktop connection until it drops. `ws` is a Starlette WebSocket."""
-        if self.ws is not None:
-            await ws.close(code=4009, reason="another desktop agent is already connected")
-            return
+        """Serve one desktop connection until it drops. `ws` is a Starlette WebSocket.
+
+        A newer authenticated connection replaces the current one: after a restart the old socket
+        can linger for a minute before the server notices it's dead, and it mustn't lock you out."""
         hello = await ws.receive_json()
         if hello.get("type") != "hello":
             await ws.close(code=4400, reason="expected hello")
             return
+        old = self.ws
+        if old is not None:
+            log.info("a new desktop connection replaces the previous one")
+            try:
+                await old.close(code=4010, reason="replaced by a newer desktop connection")
+            except Exception:  # noqa: BLE001  (already dead)
+                pass
         self.ws = ws
         self._register(hello)
         self.connected.set()
@@ -77,14 +84,15 @@ class DesktopBridge:
         except Exception as e:  # noqa: BLE001 (WebSocketDisconnect and friends)
             log.info("desktop disconnected: %s", e.__class__.__name__)
         finally:
-            self.ws = None
-            self.connected.clear()
-            self.permissions.remove_servers(self.server_names)
-            self.catalog, self.server_names = {}, []
-            for fut in self.pending.values():
-                if not fut.done():
-                    fut.set_exception(RuntimeError("the desktop agent disconnected"))
-            self.pending.clear()
+            if self.ws is ws:   # a replacement connection may already own the bridge; leave it alone
+                self.ws = None
+                self.connected.clear()
+                self.permissions.remove_servers(self.server_names)
+                self.catalog, self.server_names = {}, []
+                for fut in self.pending.values():
+                    if not fut.done():
+                        fut.set_exception(RuntimeError("the desktop agent disconnected"))
+                self.pending.clear()
 
     async def send(self, msg: dict[str, Any]) -> bool:
         if self.ws is None:

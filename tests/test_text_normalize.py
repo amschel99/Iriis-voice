@@ -45,3 +45,13 @@ def test_code_and_urls_are_not_read():
     assert "on screen" in out
     text, urls = extract_urls("Visit www.nation.africa today")
     assert urls == ["www.nation.africa"] and "on screen" in text
+
+
+def test_shouting_is_spoken_as_words_not_letters():
+    from iriis.tts.text_normalize import calm_shouting
+    assert calm_shouting("BRO. SIT THE FUCK DOWN.") == "bro. sit the fuck down."
+    assert calm_shouting("ONE. FUCKING. PERSON.") == "one. fucking. person."
+    assert calm_shouting("I AM THE AI!") == "I am the AI!"
+    assert calm_shouting("Check the CPU and RAM") == "Check the CPU and RAM"
+    assert calm_shouting("Take the SGR to Mombasa") == "Take the SGR to Mombasa"
+    assert calm_shouting("WHAT THE FUCK, AMSCHEL?!") == "what the fuck, amschel?!"

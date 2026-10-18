@@ -218,3 +218,18 @@ def test_owner_conversation_survives_server_restart(monkeypatch, tmp_path):
     users = [m["content"] for m in fake2.seen[-1] if m["role"] == "user"]
     assert users == ["the plumber comes on Thursday", "when is the plumber coming?"]
     assert r.json()["session_id"] == "owner"
+
+
+def test_new_desktop_connection_replaces_a_stale_one(monkeypatch, tmp_path):
+    script = [[ToolCall("files__read_text_file", {"path": "a"}, "c1")], "Done."]
+    client, _ = make_client(monkeypatch, script, tmp_path)
+    with client:
+        with client.websocket_connect("/v1/desktop?token=desk-token") as stale:
+            stale.send_json(DESKTOP_HELLO)
+            time.sleep(0.3)
+            received = []
+            t = _run_desktop(client, ["from the new agent"], received)   # connects while `stale` is still open
+            r = client.post("/v1/chat", json={"message": "read a", "stream": False}, headers=AUTH)
+            t.join(5)
+    assert received and received[0]["name"] == "files__read_text_file"   # the NEW agent got the call
+    assert r.status_code == 200

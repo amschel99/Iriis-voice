@@ -142,11 +142,36 @@ def extract_urls(text: str) -> tuple[str, list[str]]:
     return text, urls
 
 
+# Real acronyms stay capitalised (spelled out); every other ALL-CAPS word is shouting, not an acronym.
+ACRONYMS = {"AI", "TV", "PC", "OK", "ID", "UK", "EU", "UN", "SGR", "CBD", "JKIA", "USD", "KSH", "KES",
+            "CPU", "GPU", "RAM", "API", "USB", "URL", "PDF", "SMS", "GPS", "ATM", "VPN", "MCP", "LLM", "TTS", "STT", "CEO", "NGO"}
+_CAPS_WORD = re.compile(r"\b[A-Z][A-Z']+\b")
+
+
+def calm_shouting(text: str) -> str:
+    """'SIT THE FUCK DOWN' -> 'sit the fuck down' so TTS says words instead of spelling letters.
+    Punctuation (! ?! ...) is kept, so the delivery still carries the emphasis."""
+    words = re.findall(r"[A-Za-z']+", text)
+    caps = _CAPS_WORD.findall(text)
+    shouty = len(words) > 0 and len(caps) / len(words) >= 0.4
+
+    def fix(m: re.Match) -> str:
+        w = m.group(0)
+        if w in ACRONYMS:
+            return w
+        if len(w) >= 3 or shouty:
+            return w.lower() if w != "I" else w
+        return w
+
+    return _CAPS_WORD.sub(fix, text)
+
+
 def normalize(text: str, currency: str = "shillings") -> str:
     text = strip_markdown(text)
     text, _ = extract_urls(text)
     for pat, repl in ABBREVIATIONS.items():
         text = re.sub(pat, repl, text)
+    text = calm_shouting(text)   # after abbreviations, so "16 GB" still becomes "gigabytes"
     text = _CURRENCY_RE.sub(_currency, text)
     text = re.sub(r"\b([01]?\d|2[0-3]):([0-5]\d)\s?([ap]\.?m\.?)?(?!\d)", _time, text, flags=re.I)
     text = re.sub(r"\b(1[0-2]|[1-9])\s?([ap])\.?m\.?\b", lambda m: f"{num2words(int(m.group(1)))} {m.group(2).upper()} M", text, flags=re.I)
