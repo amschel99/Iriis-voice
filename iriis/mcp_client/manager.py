@@ -84,7 +84,7 @@ class MCPManager:
                 target = stdio_client(target, errlog=errlog)
             async with Client(target, read_timeout_seconds=CALL_TIMEOUT_S, cache=None) as client:
                 listing = await client.list_tools()
-                conn.tools = [mcp_tool_to_llm(conn.cfg.name, t) for t in listing.tools]
+                conn.tools = [mcp_tool_to_llm(conn.cfg.name, t) for t in listing.tools if self._exposed(conn.cfg, t.name)]
                 conn.client = client
                 conn.ready.set()
                 await conn.stop.wait()
@@ -96,6 +96,15 @@ class MCPManager:
             conn.ready.set()
             if errlog:
                 errlog.close()
+
+    @staticmethod
+    def _exposed(cfg: MCPServerConfig, tool: str) -> bool:
+        """Blocked or excluded tools are not offered to the AI at all (fewer tokens, nothing to misuse)."""
+        import fnmatch
+        if any(fnmatch.fnmatch(tool, pat) for pat in cfg.exclude):
+            return False
+        tier = cfg.tools.get(tool) or next((t for pat, t in cfg.tools.items() if fnmatch.fnmatch(tool, pat)), cfg.tier)
+        return tier != "blocked"
 
     async def start(self) -> list[str]:
         """Connect to every enabled server. Returns human-readable problems (empty if all good)."""

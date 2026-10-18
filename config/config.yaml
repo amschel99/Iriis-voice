@@ -119,7 +119,7 @@ permissions:
   confirm_words: ["yes", "yeah", "yep", "confirm", "confirmed", "do it", "go ahead", "sure", "okay", "ok", "proceed"]   # quoted: YAML reads bare yes as true
 
 tool_routing:
-  max_tools: 20                # above this, only tools of relevant servers are offered per turn
+  max_tools: 40                # above this, only tools of relevant servers are offered per turn
   method: keyword              # keyword (instant) | llm (one extra LLM call)
 
 memory:

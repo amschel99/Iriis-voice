@@ -101,15 +101,32 @@ mcpServers:
     description: Git repository status, history and diffs.
     keywords: [git, commit, branch, repo, repository, diff]
 
-  browser:               # Playwright MCP server (Node.js). NEEDS INTERNET for real pages.
-    enabled: false
+  browser:               # Playwright MCP (Node.js): a real, visible Chrome she drives on your PC
+    enabled: true
     needs_internet: true
     command: npx
-    args: ["-y", "@playwright/mcp@latest", "--headless"]
-    tier: confirm
-    tools: {browser_snapshot: auto, browser_take_screenshot: auto}
-    description: Browse and read web pages.
-    keywords: [web, website, page, browse, browser, site, check]
+    # Its own browser profile: she is NOT logged into your accounts unless you log in inside her window.
+    args: ["-y", "@playwright/mcp@0.0.83", "--browser", "chrome"]
+    tier: auto             # navigate, read, click, type, tabs...
+    tools:
+      browser_fill_form: confirm
+      browser_file_upload: confirm      # sends files from your PC to a website
+      browser_drop: confirm
+      browser_handle_dialog: confirm
+      browser_evaluate: confirm         # runs JavaScript on the page
+      browser_run_code_unsafe: blocked
+      browser_network_request: blocked  # full request details can contain passwords / cookies
+    exclude: [browser_emulate_media, browser_resize, browser_console_messages, browser_network_requests, browser_drag]
+    description: Drive a real web browser on the user's computer - open sites, read them, click, type, fill forms, tabs.
+    keywords: [browser, browse, website, site, page, open, click, login, form, tab, chrome, youtube, google, buy, book, check, fill, sign]
+
+  web:                   # fast web search + page reading (no browser window, no API key)
+    command: python
+    args: ["-m", "servers.web"]
+    needs_internet: true
+    tier: auto
+    description: Search the web and read web pages as text - news, facts, prices, docs, anything current.
+    keywords: [search, google, look, find, web, internet, online, news, latest, today, price, weather, who, what, website, article, read, link, url]
 
   # Unofficial messaging/social bridges: NEED INTERNET, may break, and risk account bans.
   # Read-mostly; every send/post tool stays at confirm. Their credentials live in their own env.

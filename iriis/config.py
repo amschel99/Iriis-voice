@@ -156,7 +156,7 @@ class PermissionsConfig(BaseModel):
 
 
 class ToolRoutingConfig(BaseModel):
-    max_tools: int = 20
+    max_tools: int = 40
     method: Literal["keyword", "llm"] = "keyword"
 
 
@@ -196,7 +196,8 @@ class DesktopConfig(BaseModel):
     server_url: str = "ws://127.0.0.1:8000"            # e.g. wss://your-app.up.railway.app
     token_env: str = "IRIIS_DESKTOP_TOKEN"
     api_key_env: str = "IRIIS_API_KEY"                # used by the voice client
-    servers: list[str] = Field(default_factory=lambda: ["system_info", "files", "shell", "apps_and_media", "clipboard"])
+    servers: list[str] = Field(default_factory=lambda: ["system_info", "files", "shell", "apps_and_media", "clipboard",
+                                                         "web", "browser"])
     # cloud: the cloud asks you to confirm, and the desktop only runs confirm-tier tools when the
     #        call says you confirmed. local: the desktop also asks in its own terminal (safest).
     confirm_mode: Literal["cloud", "local"] = "cloud"
@@ -234,6 +235,7 @@ class MCPServerConfig(BaseModel):
     url: str | None = None
     tier: Tier = "confirm"
     tools: dict[str, Tier] = Field(default_factory=dict)  # per-tool tier overrides
+    exclude: list[str] = Field(default_factory=list)      # tools (globs) never shown to the AI
     description: str = ""
     keywords: list[str] = Field(default_factory=list)  # used by the keyword tool router
     needs_internet: bool = False

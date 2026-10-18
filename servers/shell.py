@@ -8,6 +8,7 @@ and enforces a timeout and an output size limit.
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -21,16 +22,30 @@ TIMEOUT_S = float(os.environ.get("IRIIS_SHELL_TIMEOUT", "20"))
 MAX_OUTPUT = 6000
 
 
-def _argv(command: str) -> list[str]:
+GIT_BASH = [r"C:\Program Files\Git\bin\bash.exe", r"C:\Program Files (x86)\Git\bin\bash.exe"]
+
+
+def _argv(command: str, shell: str = "") -> list[str]:
+    shell = (shell or ("powershell" if sys.platform == "win32" else "bash")).lower()
+    if shell in ("bash", "git bash", "gitbash", "sh"):
+        if sys.platform == "win32":
+            bash = next((b for b in GIT_BASH if Path(b).exists()), None) or shutil.which("bash")
+            if not bash:
+                raise FileNotFoundError("Git Bash isn't installed")
+            return [bash, "-lc", command]
+        return ["/bin/bash", "-lc", command]
+    if shell == "cmd" and sys.platform == "win32":
+        return ["cmd.exe", "/d", "/c", command]
     if sys.platform == "win32":
         return ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command]
     return ["/bin/sh", "-c", command]
 
 
 @mcp.tool()
-def run_command(command: str, working_directory: str = "") -> str:
-    """Run a shell command (PowerShell on Windows, sh elsewhere) and return its output.
-    Read-only commands like 'dir', 'git status', 'ping -n 2 example.com' run directly; others need the user's confirmation."""
+def run_command(command: str, working_directory: str = "", shell: str = "") -> str:
+    """Run a terminal command and return its output. shell: "powershell" (default on Windows), "bash" (Git Bash)
+    or "cmd". Read-only commands like 'dir', 'ls', 'git status', 'ping -n 2 example.com' run directly;
+    anything else needs the user's spoken confirmation."""
     verdict, reason = classify(command)
     if verdict == "blocked":
         return f"BLOCKED: {reason}. This command is never run."
@@ -39,7 +54,7 @@ def run_command(command: str, working_directory: str = "") -> str:
         return f"Working directory does not exist: {cwd}"
     try:
         proc = subprocess.run(
-            _argv(command), cwd=cwd, capture_output=True, text=True, timeout=TIMEOUT_S,
+            _argv(command, shell), cwd=cwd, capture_output=True, text=True, timeout=TIMEOUT_S,
             encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL,
         )
     except subprocess.TimeoutExpired:
