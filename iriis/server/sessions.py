@@ -159,6 +159,10 @@ async def run_turn(session: Session, text: str, emit: Emit, *, speech=None, spea
     async def say(sentence: str) -> None:
         await emit({"type": "sentence", "text": strip_directions(sentence)}, None)
         if worker:
+            # Wake the GPU voice only when she actually replies: with all-day listening, background
+            # speech she ignores must not keep a paid GPU awake.
+            if speech is not None and hasattr(speech, "warm_up"):
+                speech.warm_up()
             await tts_q.put((sentence, False))
 
     async def confirm(question: str) -> str:

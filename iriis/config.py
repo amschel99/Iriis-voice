@@ -28,7 +28,7 @@ class WakeWordConfig(BaseModel):
     model: str = "hey_jarvis"
     threshold: float = 0.5
     push_to_talk_key: str = "f9"
-    followup_s: float = 600.0    # conversation mode: after she answers, keep listening this long (no wake word)
+    followup_s: float = 86400.0  # conversation mode: after she answers, keep listening this long (24 h; no wake word)
 
 
 class VADConfig(BaseModel):
