@@ -442,6 +442,8 @@ def create_app(cfg: Config | None = None) -> FastAPI:
                 elif kind == "confirm_reply":
                     reply = data.get("text") if data.get("text") is not None else ("yes" if data.get("approved") else "no")
                     session.resolve_confirmation(data.get("id"), reply)
+                elif kind == "wake":
+                    core.speech.warm_up()            # "Hey Jarvis": you're definitely talking to her
                 elif kind == "interrupt":
                     interrupt()
                 elif kind == "reset":

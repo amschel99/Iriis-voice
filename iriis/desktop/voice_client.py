@@ -79,6 +79,11 @@ class RemoteVoiceClient:
             best = max(best, float(self.wake.last_score))
             if fired:
                 self.ui.info(f"wake word heard (score {self.wake.last_score:.2f})")
+                if self.ws is not None:
+                    try:   # start waking her GPU voice while you're still asking your question
+                        await self.ws.send(json.dumps({"type": "wake"}))
+                    except Exception:  # noqa: BLE001
+                        pass
                 break
             if time.monotonic() - window_start >= 5:
                 # Diagnostics: what she hears, visible in `iriis status` and the log.

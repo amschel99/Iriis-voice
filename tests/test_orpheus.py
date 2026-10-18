@@ -159,12 +159,14 @@ def test_cold_gpu_wakes_in_background_and_kokoro_covers(monkeypatch):
     eng, cfg = _open_engine(monkeypatch)
     assert eng.voice == "tara" and eng.name == "orpheus-open:tara"
     health_calls, posts = [], []
-    monkeypatch.setattr(eng.http, "get", lambda url, headers=None, timeout=None: health_calls.append(url) or FakeResp(200))
+    answers = iter([FakeResp(503)])          # the quick probe: asleep; afterwards the background warm-up succeeds
+    monkeypatch.setattr(eng.http, "get",
+                        lambda url, headers=None, timeout=None: health_calls.append(url) or next(answers, FakeResp(200)))
     monkeypatch.setattr(eng.http, "post", lambda url, headers, json: posts.append((url, json)) or FakeResp(200, _wav()))
     with pytest.raises(RuntimeError, match="waking up"):
         eng.synthesize("Hello there.")            # cold: refuse quickly, start the warm-up
     eng._warming.join(2)
-    assert health_calls == ["https://me--iriis-orpheus.modal.run/health"] and eng.warm
+    assert set(health_calls) == {"https://me--iriis-orpheus.modal.run/health"} and eng.warm
     eng.synthesize("<laugh> Hello there.", voice="hannah")   # warm now; hannah maps to tara
     url, body = posts[0]
     assert url.endswith("/v1/audio/speech") and body["voice"] == "tara" and body["input"] == "<laugh> Hello there."
@@ -297,3 +299,14 @@ def test_loose_sound_tags_are_understood_and_hidden():
     assert strip_directions(t) == "Right. Fine."
     assert normalize(t, style="open") == "<chuckle> Right. <laugh> Fine."
     assert "chuckle" not in normalize(t) and "laugh" not in normalize(t)
+
+
+
+def test_expired_flag_but_gpu_still_up_speaks_immediately(monkeypatch):
+    """The bug: after 4 quiet minutes she assumed the GPU slept, though the host keeps it up 15 min."""
+    eng, _ = _open_engine(monkeypatch)
+    monkeypatch.setattr(eng.http, "get", lambda url, headers=None, timeout=None: FakeResp(200))
+    monkeypatch.setattr(eng.http, "post", lambda url, headers, json: FakeResp(200, _wav()))
+    assert not eng.warm
+    audio = eng.synthesize("Hello there.")      # probe says awake -> no Kokoro fallback
+    assert len(audio) > 0 and eng.warm

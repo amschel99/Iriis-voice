@@ -52,6 +52,7 @@ Client -> server:
 - JSON `{"type": "end_utterance"}`: transcribe what was sent and answer it (do VAD/endpointing client-side).
 - JSON `{"type": "text", "text": "..."}`: a typed request on the same session.
 - JSON `{"type": "interrupt"}`: barge-in; stop the current answer and its audio.
+- JSON `{"type": "wake"}`: optional; the user just said the wake word (pre-warms the voice GPU).
 - JSON `{"type": "confirm_reply", "id", "approved": bool}`. An utterance spoken while a confirmation is pending also counts as the reply.
 - JSON `{"type": "reset"}`: start a new conversation.
 

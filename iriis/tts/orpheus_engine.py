@@ -101,6 +101,24 @@ class OrpheusEngine(TTSEngine):
     def warm(self) -> bool:
         return time.time() < self._warm_until
 
+    def ensure_warm(self) -> bool:
+        """True if the GPU can speak right now. Our "warm" flag may have expired while the host is
+        still up (it stays up 15 min after the last request), so ask it quickly before giving up;
+        if it really is asleep, start waking it and let the caller use the fallback voice."""
+        if self.warm:
+            return True
+        if self.health_url is None:
+            return True
+        try:
+            r = self.http.get(self.health_url, headers=self.headers, timeout=2.5)
+            if r.status_code == 200:
+                self._warm_until = time.time() + WARM_FOR_S
+                return True
+        except Exception:  # noqa: BLE001
+            pass
+        self.warm_up()
+        return False
+
     def warm_up(self, wait: bool = False) -> None:
         """Wake the GPU container in the background (its /health answers once the model is loaded)."""
         if self.warm or self.health_url is None:
@@ -140,8 +158,7 @@ class OrpheusEngine(TTSEngine):
     def stream(self, text: str, voice: str | None = None, stop=None):
         """Yield float32 audio chunks while the GPU is still generating (open flavour: /stream endpoint).
         `stop` is an optional threading.Event to abandon the request (barge-in). Groq: one whole chunk."""
-        if not self.warm:
-            self.warm_up()
+        if not self.ensure_warm():
             raise RuntimeError("the Orpheus GPU is waking up")   # caller speaks this one with Kokoro
         if self.flavor != "open":
             yield self.synthesize(text, voice)
@@ -173,8 +190,7 @@ class OrpheusEngine(TTSEngine):
 
     def synthesize(self, text: str, voice: str | None = None) -> np.ndarray:
         """`text` should already be normalised with style=self.style."""
-        if not self.warm:
-            self.warm_up()
+        if not self.ensure_warm():
             raise RuntimeError("the Orpheus GPU is waking up")   # caller speaks this one with Kokoro
         voice = voice_for(voice, self.flavor) or self.voice
         chunks, gap = [], None
