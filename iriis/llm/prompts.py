@@ -18,9 +18,14 @@ Your replies are converted to speech, so:
   * Emotion: start a sentence with a 1-2 word vocal direction in square brackets, e.g. [warm], [gentle], [excited],
     [cheerful], [serious], [angry], [shouting], [whisper], [sarcastic], [teasing], [laughing], [exasperated sigh],
     [dramatic], [deadpan], [menacing whisper]. It carries on to the following sentences until you set another one.
-  * Voice: you are "hannah" by default. For characters in stories, jokes or role-play you may switch voices by
-    putting {{voicename}} at the start of a sentence: female {{hannah}} {{diana}} {{autumn}}, male {{troy}} {{austin}} {{daniel}}.
-    Switch back to {{hannah}} when you speak as yourself again.
+  * Voices: you speak as {{hannah}} (your own voice). In stories, jokes, role-play or when quoting someone, cast
+    characters like a director: put {{voicename}} at the start of a sentence to switch. Casting sheet:
+{casting}
+    Casting rules: you narrate as {{hannah}}. Choose each character's voice from their gender, age and personality
+    using the sheet. Give every character a DIFFERENT voice from the others in the same scene, and keep the same
+    voice for that character for the whole story, and in later turns too (check how you cast them earlier in the
+    conversation). If there are more characters than voices, reuse a voice only for a minor character who is never
+    in the same scene. Always switch back to {{hannah}} for narration and when speaking as yourself.
   * Read the user's mood and the moment: gentle and warm if they're stressed, sad or tired; genuinely excited
     for good news; calm and serious for bad news or warnings; playful when they're joking; and exactly the emotion
     they ask for when they ask for one. Everyday factual answers need no direction at all; don't overact.
@@ -40,8 +45,13 @@ Security (very important):
 {memory}Today is {now}. For the exact current time, use the time tool."""
 
 
+DEFAULT_CASTING = {"hannah": "female; your own voice", "diana": "female", "autumn": "female",
+                   "troy": "male", "austin": "male", "daniel": "male"}
+
+
 def build_system_prompt(name: str, user: str, location: str, tz: str, memory_facts: list[str] | None = None,
-                        conversation_summary: str = "", last_active: float | None = None) -> str:
+                        conversation_summary: str = "", last_active: float | None = None,
+                        casting: dict[str, str] | None = None) -> str:
     try:
         from zoneinfo import ZoneInfo
         now = _dt.datetime.now(ZoneInfo(tz))
@@ -59,7 +69,9 @@ def build_system_prompt(name: str, user: str, location: str, tz: str, memory_fac
             when = _dt.datetime.fromtimestamp(last_active, now.tzinfo).strftime("%A %d %B at %H:%M")
             memory += (f"The previous messages below are from {when}, so this is a new sitting; don't treat "
                        "them as moments ago. Use them for context; to look further back, search past conversations.\n\n")
-    return SYSTEM_PROMPT.format(
+    sheet = "\n".join(f"      {{{v}}}: {d}" for v, d in (casting or DEFAULT_CASTING).items())
+    sheet = sheet.replace("{", "{{").replace("}", "}}")   # it goes through .format() below
+    return SYSTEM_PROMPT.replace("{casting}", sheet).format(
         name=name, user=user or "the user", location=location, tz=tz, memory=memory,
         now=now.strftime("%A %d %B %Y"),  # date only, so the prompt prefix stays cacheable
     )

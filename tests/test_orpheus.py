@@ -125,3 +125,12 @@ def test_turn_passes_chosen_voices_to_tts(tmp_path, monkeypatch):
     assert speech.calls[1][0].startswith("[gravelly]")
     shown = [e["text"] for e in events if e["type"] == "sentence"]
     assert shown == ["Here's a quick one.", "Who goes there?", "Just the cat!"]
+
+
+def test_casting_sheet_from_config_reaches_the_prompt():
+    from iriis.llm.prompts import build_system_prompt
+    cfg = Config()
+    cfg.tts.voice_casting["troy"] = "male; very deep and slow: kings, villains"
+    p = build_system_prompt("Iriis", "", "Nairobi", "Africa/Nairobi", casting=cfg.tts.voice_casting)
+    assert "{troy}: male; very deep and slow: kings, villains" in p
+    assert "DIFFERENT voice" in p and "keep the same" in p     # the casting rules

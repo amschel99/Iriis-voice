@@ -283,7 +283,12 @@ def _speak(text: str, online: bool = True) -> None:
     import concurrent.futures as cf
 
     import httpx
-    pieces = _chunks(text)
+    from iriis.tts.text_normalize import Delivery
+    delivery = Delivery()   # a {voice} or [emotion] carries on across the pieces, as in her live replies
+    pieces = []
+    for piece in _chunks(text):
+        spoken, voice = delivery.apply(piece)
+        pieces.append((f"{{{voice}}} " if voice else "") + spoken)
     if not pieces:
         return
     if online:
@@ -413,6 +418,35 @@ def cmd_logs(args) -> None:
                 pass
 
 
+SAMPLE_LINES = {
+    "hannah": "Hi, I'm Hannah, Iriis' own voice. [warm] I'll be telling you the story. [excited] And it's a good one!",
+    "diana": "Hi, I'm Diana. [serious] Sit down, the meeting starts now. [warm] Well done, my dear.",
+    "autumn": "Hi, I'm Autumn! [excited] Oh my gosh, did you see that? [whisper] Don't tell anyone.",
+    "troy": "Hi, I'm Troy. [menacing] Nobody leaves this room. [laughing] Relax, I'm joking.",
+    "austin": "Hi, I'm Austin. [casual] Bro, you won't believe what happened today. [excited] We won!",
+    "daniel": "Hi, I'm Daniel. [calm] The results are in, and they look good. [serious] But we must be careful.",
+}
+
+
+def cmd_voices(args) -> None:
+    """Play every voice (neutral, then with a couple of emotions) so you can write the casting sheet."""
+    from iriis.config import load_config
+    cfg = load_config()
+    ok, summary, info = _check_brain()
+    if not ok:
+        sys.exit(f"I'm not connected to my brain right now ({summary}), so I can't play her voices.")
+    if not str(info.get("tts", "")).startswith("orpheus"):
+        print(f"{YELLOW}Her brain is using {info.get('tts')} (calm voice), not Orpheus,{RESET} so every sample would sound"
+              " the same. Set GROQ_API_KEY on Railway and accept the Orpheus terms first.")
+        return
+    voices = [args.voice] if args.voice else list(SAMPLE_LINES)
+    for v in voices:
+        print(f"\n{BOLD}{{{v}}}{RESET}  casting sheet says: {DIM}{cfg.tts.voice_casting.get(v, '?')}{RESET}")
+        _speak(f"{{{v}}} {SAMPLE_LINES.get(v, 'Hello, this is my voice.')}", online=True)
+    print(f"\nNow describe what you heard in {BOLD}config/config.yaml{RESET} under tts.voice_casting"
+          " (e.g. troy: \"male; very deep, slow: villains, kings, old men\"), push, and she'll cast from that.")
+
+
 def cmd_mic(args) -> None:
     """Live mic check: a level meter plus the wake-word score, so you can see what she hears."""
     import queue
@@ -502,6 +536,9 @@ def main() -> None:
     sp.add_argument("-f", "--follow", action="store_true")
     sp.add_argument("-n", "--lines", type=int, default=40)
     sp.set_defaults(fn=cmd_logs)
+    sp = sub.add_parser("voices", help="hear every voice she can cast (to write the casting sheet)")
+    sp.add_argument("voice", nargs="?", help="just one voice, e.g. troy")
+    sp.set_defaults(fn=cmd_voices)
     sp = sub.add_parser("mic", help="live mic + wake-word test")
     sp.add_argument("--device", help="input device number or name (see --list)")
     sp.add_argument("--list", action="store_true", help="list audio devices")

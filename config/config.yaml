@@ -72,6 +72,15 @@ llm:
 tts:
   backend: orpheus             # orpheus (expressive, via Groq: needs GROQ_API_KEY) | kokoro | piper
   orpheus_voice: hannah        # female: hannah, diana, autumn; male: troy, austin, daniel
+  # Casting sheet: the AI picks voices for characters from these descriptions. They are FIRST GUESSES:
+  # run `iriis voices`, listen, then describe what each voice really sounds like and what it suits.
+  voice_casting:
+    hannah: "female; Iriis' own voice. Narrator, and herself in every non-story reply"
+    diana: "female; mature, composed: mothers, teachers, bosses, officials, the wise elder"
+    autumn: "female; youthful, bright: girls, best friends, excited or nervous young women"
+    troy: "male; deep, heavy: villains, guards, fathers, big tough men, menace"
+    austin: "male; young, casual: boys, students, friends, the funny sidekick"
+    daniel: "male; calm, measured: professionals, doctors, news readers, old wise men"
                                # if Groq fails she keeps talking with kokoro (on the server's CPU)
   kokoro_model: models/tts/kokoro-v1.0.int8.onnx
   kokoro_voices: models/tts/voices-v1.0.bin

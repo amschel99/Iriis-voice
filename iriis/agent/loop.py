@@ -82,7 +82,8 @@ class Agent:
             facts = []
         return {"role": "system", "content": build_system_prompt(
             self.cfg.assistant_name, self.cfg.user_name, self.cfg.location, self.cfg.timezone, facts,
-            conversation_summary=self.summary, last_active=self.last_active)}
+            conversation_summary=self.summary, last_active=self.last_active,
+            casting=self.cfg.tts.voice_casting)}
 
     # ------------------------------------------------------------------ persistence
 

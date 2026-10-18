@@ -79,6 +79,16 @@ class TTSConfig(BaseModel):
     orpheus_model: str = "canopylabs/orpheus-v1-english"
     orpheus_voice: str = "hannah"          # female: hannah, diana, autumn; male: troy, austin, daniel
     orpheus_api_key_env: str = "GROQ_API_KEY"
+    # Casting sheet: how each voice sounds and what it suits. The AI casts characters from this, so
+    # describe what you HEAR (run `iriis voices`). The defaults are first guesses (nobody has listened yet).
+    voice_casting: dict[str, str] = Field(default_factory=lambda: {
+        "hannah": "female; Iriis' own voice. Narrator, and herself in every non-story reply",
+        "diana": "female; mature, composed: mothers, teachers, bosses, officials, the wise elder",
+        "autumn": "female; youthful, bright: girls, best friends, excited or nervous young women",
+        "troy": "male; deep, heavy: villains, guards, fathers, big tough men, menace",
+        "austin": "male; young, casual: boys, students, friends, the funny sidekick",
+        "daniel": "male; calm, measured: professionals, doctors, news readers, old wise men",
+    })
     kokoro_model: str = "models/tts/kokoro-v1.0.int8.onnx"
     kokoro_voices: str = "models/tts/voices-v1.0.bin"
     voice: str = "af_heart"
