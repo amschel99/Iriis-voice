@@ -418,6 +418,17 @@ def cmd_logs(args) -> None:
                 pass
 
 
+OPEN_SAMPLE_LINES = {
+    "tara": "Hi, I'm Tara, Iriis' own voice. <laugh> I'll be telling you the story, and it's a good one!",
+    "leah": "Hi, I'm Leah. Sit down, the meeting starts now. <sigh> Well done, my dear. Really.",
+    "jess": "Hi, I'm Jess! Oh my gosh, did you see that? <laugh> Don't tell anyone.",
+    "mia": "Hi, I'm Mia. Um, I'm a bit nervous... <gasp> wait, we won? We actually won!",
+    "zoe": "Hi, I'm Zoe. It's okay. You did your best, and that's enough for today.",
+    "leo": "Hi, I'm Leo. Nobody leaves this room. <chuckle> Relax, I'm joking.",
+    "dan": "Hi, I'm Dan. Bro, you won't believe what happened today. <laugh> Classic.",
+    "zac": "Hi, I'm Zac! Let's go, let's go, let's go! <groan> Okay, fine, I'll calm down.",
+}
+
 SAMPLE_LINES = {
     "hannah": "Hi, I'm Hannah, Iriis' own voice. [warm] I'll be telling you the story. [excited] And it's a good one!",
     "diana": "Hi, I'm Diana. [serious] Sit down, the meeting starts now. [warm] Well done, my dear.",
@@ -439,11 +450,15 @@ def cmd_voices(args) -> None:
         print(f"{YELLOW}Her brain is using {info.get('tts')} (calm voice), not Orpheus,{RESET} so every sample would sound"
               " the same. Set GROQ_API_KEY on Railway and accept the Orpheus terms first.")
         return
-    voices = [args.voice] if args.voice else list(SAMPLE_LINES)
+    flavor = "open" if str(info.get("tts", "")).startswith("orpheus-open") else "groq"
+    cfg.tts.orpheus_flavor = flavor
+    sheet = cfg.tts.casting()
+    lines = OPEN_SAMPLE_LINES if flavor == "open" else SAMPLE_LINES
+    voices = [args.voice] if args.voice else list(sheet)
     for v in voices:
-        print(f"\n{BOLD}{{{v}}}{RESET}  casting sheet says: {DIM}{cfg.tts.voice_casting.get(v, '?')}{RESET}")
-        _speak(f"{{{v}}} {SAMPLE_LINES.get(v, 'Hello, this is my voice.')}", online=True)
-    print(f"\nNow describe what you heard in {BOLD}config/config.yaml{RESET} under tts.voice_casting"
+        print(f"\n{BOLD}{{{v}}}{RESET}  casting sheet says: {DIM}{sheet.get(v, '?')}{RESET}")
+        _speak(f"{{{v}}} {lines.get(v, 'Hello, this is my voice.')}", online=True)
+    print(f"\nNow describe what you heard in {BOLD}config/config.yaml{RESET} under tts.voice_casting.{flavor}"
           " (e.g. troy: \"male; very deep, slow: villains, kings, old men\"), push, and she'll cast from that.")
 
 

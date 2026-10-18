@@ -79,6 +79,11 @@ class Speech:
                 self._fallback = make_tts(self.cfg.tts, "piper")
         return self._fallback
 
+    def warm_up(self) -> None:
+        """Wake a scale-to-zero voice GPU early (e.g. when a conversation starts)."""
+        if self._tts is not None and hasattr(self._tts, "warm_up"):
+            self._tts.warm_up()
+
     async def preload(self) -> list[str]:
         problems = []
         if self.cfg.server.stt:
@@ -116,7 +121,7 @@ class Speech:
         voice = tagged_voice or voice
         tts = self._load_tts()
         if tts.name.startswith("orpheus"):
-            spoken = normalize(text, self.cfg.tts.currency, keep_directions=True)
+            spoken = normalize(text, self.cfg.tts.currency, style=tts.style)
             if not spoken:
                 return np.zeros(0, dtype=np.float32), tts.sample_rate
             try:

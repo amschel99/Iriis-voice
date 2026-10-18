@@ -130,7 +130,71 @@ def test_turn_passes_chosen_voices_to_tts(tmp_path, monkeypatch):
 def test_casting_sheet_from_config_reaches_the_prompt():
     from iriis.llm.prompts import build_system_prompt
     cfg = Config()
-    cfg.tts.voice_casting["troy"] = "male; very deep and slow: kings, villains"
-    p = build_system_prompt("Iriis", "", "Nairobi", "Africa/Nairobi", casting=cfg.tts.voice_casting)
+    cfg.tts.orpheus_flavor = "groq"
+    cfg.tts.voice_casting["groq"]["troy"] = "male; very deep and slow: kings, villains"
+    p = build_system_prompt("Iriis", "", "Nairobi", "Africa/Nairobi", casting=cfg.tts.casting(), voice_style="groq")
     assert "{troy}: male; very deep and slow: kings, villains" in p
     assert "DIFFERENT voice" in p and "keep the same" in p     # the casting rules
+
+
+def _open_engine(monkeypatch):
+    monkeypatch.setenv("ORPHEUS_TOKEN", "ot")
+    cfg = Config()
+    cfg.tts.backend, cfg.tts.orpheus_flavor, cfg.tts.orpheus_url = "orpheus", "open", "https://me--iriis-orpheus.modal.run"
+    return OrpheusEngine(cfg.tts), cfg
+
+
+def test_open_flavor_needs_url_and_token(monkeypatch):
+    cfg = Config()
+    cfg.tts.orpheus_flavor = "open"
+    with pytest.raises(RuntimeError, match="orpheus_url"):
+        OrpheusEngine(cfg.tts)
+    cfg.tts.orpheus_url = "https://x.modal.run"
+    monkeypatch.delenv("ORPHEUS_TOKEN", raising=False)
+    with pytest.raises(RuntimeError, match="ORPHEUS_TOKEN"):
+        OrpheusEngine(cfg.tts)
+
+
+def test_cold_gpu_wakes_in_background_and_kokoro_covers(monkeypatch):
+    eng, cfg = _open_engine(monkeypatch)
+    assert eng.voice == "tara" and eng.name == "orpheus-open:tara"
+    health_calls, posts = [], []
+    monkeypatch.setattr(eng.http, "get", lambda url, timeout=None: health_calls.append(url) or FakeResp(200))
+    monkeypatch.setattr(eng.http, "post", lambda url, headers, json: posts.append((url, json)) or FakeResp(200, _wav()))
+    with pytest.raises(RuntimeError, match="waking up"):
+        eng.synthesize("Hello there.")            # cold: refuse quickly, start the warm-up
+    eng._warming.join(2)
+    assert health_calls == ["https://me--iriis-orpheus.modal.run/health"] and eng.warm
+    eng.synthesize("<laugh> Hello there.", voice="hannah")   # warm now; hannah maps to tara
+    url, body = posts[0]
+    assert url.endswith("/v1/audio/speech") and body["voice"] == "tara" and body["input"] == "<laugh> Hello there."
+
+
+def test_server_uses_open_style_text_and_falls_back_when_cold(monkeypatch):
+    from iriis.server.speech import Speech
+    eng, cfg = _open_engine(monkeypatch)
+    speech = Speech(cfg)
+    speech._tts = eng
+    monkeypatch.setattr(eng.http, "get", lambda url, timeout=None: FakeResp(503))   # never warms in this test
+
+    class FakeKokoro:
+        name, sample_rate = "kokoro:af_heart", 24000
+        def synthesize(self, text):
+            assert "<" not in text and "[" not in text
+            return np.ones(50, dtype=np.float32)
+    speech._fallback = FakeKokoro()
+    audio, _ = speech._synthesize("[laughing] You again? <sigh> Fine.", None)
+    assert len(audio) == 50                                  # cold GPU: Kokoro spoke instead of silence
+    assert normalize("[laughing] You again? <sigh> Fine.", style="open") == "<laugh> You again? <sigh> Fine."
+
+
+def test_prompt_style_follows_what_is_usable(monkeypatch, tmp_path):
+    from iriis.agent.loop import Agent
+    from iriis.agent.permissions import PermissionManager
+    cfg = Config()
+    cfg.tts.backend, cfg.tts.orpheus_flavor = "orpheus", "open"
+    agent = Agent(cfg, None, None, PermissionManager(cfg, []))
+    assert agent._voice_style() == "plain"                    # no URL yet: don't write <laugh> tags
+    cfg.tts.orpheus_url = "https://x.modal.run"
+    monkeypatch.setenv("ORPHEUS_TOKEN", "ot")
+    assert agent._voice_style() == "open"

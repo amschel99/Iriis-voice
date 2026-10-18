@@ -83,7 +83,17 @@ class Agent:
         return {"role": "system", "content": build_system_prompt(
             self.cfg.assistant_name, self.cfg.user_name, self.cfg.location, self.cfg.timezone, facts,
             conversation_summary=self.summary, last_active=self.last_active,
-            casting=self.cfg.tts.voice_casting)}
+            casting=self.cfg.tts.casting(), voice_style=self._voice_style())}
+
+    def _voice_style(self) -> str:
+        """Which tag syntax she should write: only what the voice engine in use can actually perform."""
+        import os
+        t = self.cfg.tts
+        if t.backend != "orpheus":
+            return "plain"
+        if t.orpheus_flavor == "open":
+            return "open" if t.orpheus_url and os.environ.get(t.orpheus_token_env) else "plain"
+        return "groq" if os.environ.get(t.orpheus_api_key_env) else "plain"
 
     # ------------------------------------------------------------------ persistence
 

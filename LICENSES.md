@@ -64,6 +64,9 @@ Iriis' own code: MIT.
 | Silero VAD v6 (bundled with faster-whisper) | MIT | Voice activity detection |
 | openWakeWord `hey_jarvis` + feature models | Apache-2.0 code; the pretrained models are **CC-BY-NC-SA-4.0** according to the openWakeWord README | Wake word. Train your own wake word for commercial use |
 | Orpheus TTS (canopylabs/orpheus-v1-english, served by Groq) | Apache-2.0 weights; Groq ToS + model terms for the service (paid, $22 per 1M characters) | Expressive TTS (default when GROQ_API_KEY is set) |
+| canopylabs/orpheus-3b-0.1-ft (self-hosted, deploy/orpheus_modal.py) | Card says Apache-2.0; it is fine-tuned from Llama-3.2-3B-Instruct, so the **Llama 3.2 Community License** may also apply. Gated on Hugging Face | Expressive TTS on your own GPU |
+| SNAC 24 kHz (hubertsiuzdak/snac_24khz) | MIT | Orpheus audio decoder |
+| vLLM 0.9.2 / Modal SDK 1.6.2 | Apache-2.0 / Apache-2.0 | GPU inference / deployment |
 | Kokoro-82M v1.0 (ONNX) | Apache-2.0 | TTS fallback and on-device voice |
 | Piper voice en_GB-alba-medium | See the voice's MODEL_CARD on Hugging Face (rhasspy/piper-voices) | Fallback TTS |
 | openai/gpt-oss-120b, gpt-oss-20b (served by Groq) | Apache-2.0 weights; Groq ToS for the service | Cloud LLM |

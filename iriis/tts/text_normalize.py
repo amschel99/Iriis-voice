@@ -171,8 +171,35 @@ def calm_shouting(text: str) -> str:
 
 DIRECTION_RE = re.compile(r"\[([A-Za-z][A-Za-z ,'-]{0,38})\]")
 
+# Orpheus comes in two flavours with different voices and emotion syntax:
+#   groq (hosted orpheus-v1): voices below, [any direction] like [angry]
+#   open (self-hosted orpheus-3b-0.1): its own voices, only <sound> tags like <laugh>
+GROQ_VOICES = ("hannah", "diana", "autumn", "troy", "austin", "daniel")
+OPEN_VOICES = ("tara", "leah", "jess", "mia", "zoe", "leo", "dan", "zac")
+_EQUIV = {"hannah": "tara", "diana": "leah", "autumn": "mia", "troy": "leo", "austin": "zac", "daniel": "dan"}
+_EQUIV.update({"jess": "autumn", "zoe": "autumn"})
+for _g, _o in list(_EQUIV.items())[:6]:
+    _EQUIV.setdefault(_o, _g)
 
-VOICE_TAG_RE = re.compile(r"\{\s*(hannah|diana|autumn|troy|austin|daniel)\s*\}", re.I)
+SOUND_TAGS = ("laugh", "chuckle", "sigh", "cough", "sniffle", "groan", "yawn", "gasp")
+SOUND_TAG_RE = re.compile(r"<\s*(" + "|".join(SOUND_TAGS) + r")\s*>", re.I)
+VOICE_TAG_RE = re.compile(r"\{\s*(" + "|".join(GROQ_VOICES + OPEN_VOICES) + r")\s*\}", re.I)
+
+_DIRECTION_TO_SOUND = [  # first match wins
+    (r"chuckl", "chuckle"), (r"laugh|giggl|snicker", "laugh"), (r"sigh", "sigh"), (r"groan", "groan"),
+    (r"gasp", "gasp"), (r"yawn|sleepy", "yawn"), (r"sniffl|crying|tearful|sob", "sniffle"), (r"cough", "cough"),
+]
+_SOUND_TO_DIRECTION = {"laugh": "[laughing]", "chuckle": "[chuckling]", "sigh": "[sighing]", "groan": "[groaning]",
+                       "gasp": "[gasp]", "yawn": "[yawning]", "sniffle": "[tearful]", "cough": "[coughing]"}
+
+
+def voice_for(name: str | None, flavor: str) -> str | None:
+    """Map a voice name to the active flavour's nearest equivalent (hannah <-> tara, troy <-> leo...)."""
+    if not name:
+        return None
+    name = name.lower()
+    pool = OPEN_VOICES if flavor == "open" else GROQ_VOICES
+    return name if name in pool else (_EQUIV.get(name) if _EQUIV.get(name) in pool else None)
 
 
 def take_voice(text: str) -> tuple[str | None, str]:
@@ -183,8 +210,9 @@ def take_voice(text: str) -> tuple[str | None, str]:
 
 
 def strip_directions(text: str) -> str:
-    """Remove vocal directions like [angry] and voice tags like {troy} (for display and calm voices)."""
-    return re.sub(r"\s{2,}", " ", DIRECTION_RE.sub("", VOICE_TAG_RE.sub("", text))).strip()
+    """Remove [directions], {voice} tags and <sound> tags (for display and calm voices)."""
+    text = SOUND_TAG_RE.sub("", DIRECTION_RE.sub("", VOICE_TAG_RE.sub("", text)))
+    return re.sub(r"\s{2,}", " ", text).strip()
 
 
 class Delivery:
@@ -208,29 +236,47 @@ class Delivery:
 
 
 def is_shouting(text: str) -> bool:
-    words = re.findall(r"[A-Za-z']+", DIRECTION_RE.sub("", text))
+    words = re.findall(r"[A-Za-z']+", SOUND_TAG_RE.sub("", DIRECTION_RE.sub("", text)))
     caps = [w for w in words if len(w) > 1 and w.isupper() and w not in ACRONYMS]
     return len(words) >= 2 and len(caps) / len(words) >= 0.5
 
 
-def normalize(text: str, currency: str = "shillings", keep_directions: bool = False) -> str:
-    """keep_directions=True (expressive voices): keep [angry]-style directions, and turn an
-    all-caps sentence into a [shouting] one. Otherwise directions are removed."""
-    directions: list[str] = []
+def _direction_as_sound(m: re.Match) -> str:
+    d = m.group(1).lower()
+    for pattern, sound in _DIRECTION_TO_SOUND:
+        if re.search(pattern, d):
+            return f"<{sound}>"
+    return " "   # the open model can't take [angry]; the wording carries the emotion
+
+
+def normalize(text: str, currency: str = "shillings", keep_directions: bool = False, style: str | None = None) -> str:
+    """Prepare text for a TTS engine.
+    style "plain" (Kokoro/Piper): no tags at all.
+    style "groq"  (Orpheus v1): keep [directions]; <sounds> become directions; all-caps -> [shouting].
+    style "open"  (self-hosted Orpheus 0.1): keep <sounds>; [laughing]-like directions become sounds; others dropped.
+    keep_directions=True is the old spelling of style="groq"."""
+    style = style or ("groq" if keep_directions else "plain")
     text = VOICE_TAG_RE.sub(" ", text)       # voices are chosen by the caller, never read out
-    if keep_directions:
+    if style == "groq":
         if is_shouting(text) and not DIRECTION_RE.search(text):
             text = "[shouting] " + text
-
+        text = SOUND_TAG_RE.sub(lambda m: _SOUND_TO_DIRECTION[m.group(1).lower()], text)
+        keep = DIRECTION_RE
+    elif style == "open":
+        text = DIRECTION_RE.sub(_direction_as_sound, text)
+        keep = SOUND_TAG_RE
+    else:
+        text = SOUND_TAG_RE.sub(" ", DIRECTION_RE.sub(" ", text))
+        keep = None
+    stashed: list[str] = []
+    if keep is not None:
         def stash(m: re.Match) -> str:
             # letters only: digits would be turned into words by the number step
-            directions.append(m.group(0).lower())
-            return f" qqdir{_tag(len(directions) - 1)}qq "
-        text = DIRECTION_RE.sub(stash, text)
-    else:
-        text = DIRECTION_RE.sub(" ", text)
+            stashed.append(m.group(0).lower())
+            return f" qqdir{_tag(len(stashed) - 1)}qq "
+        text = keep.sub(stash, text)
     text = _normalize_plain(text, currency)
-    for i, d in enumerate(directions):
+    for i, d in enumerate(stashed):
         text = re.sub(rf"\s*qqdir{_tag(i)}qq\s*", f" {d} ", text, flags=re.I)
     return re.sub(r"\s{2,}", " ", text).strip()
 

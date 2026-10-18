@@ -1,34 +1,42 @@
-"""Orpheus (Canopy Labs) expressive TTS, served by Groq: real emotion through vocal directions.
+"""Orpheus expressive TTS, two flavours behind one engine:
 
-Text may contain directions in square brackets, e.g. "[angry] Close the laptop." or "[whisper] I love you."
-Groq limits each request to 200 characters, so longer text is split at sentence/comma boundaries.
+  groq  hosted orpheus-v1 on Groq. Voices hannah/diana/autumn/troy/austin/daniel; [any direction]; 200 chars/request.
+  open  self-hosted canopylabs/orpheus-3b-0.1-ft (deploy/orpheus_modal.py on a Modal GPU). Voices tara/leah/jess/
+        mia/zoe/leo/dan/zac; <laugh> <sigh>... sound tags; no rate limits. Scales to zero, so the first request
+        after a quiet spell waits for a GPU: warm() wakes it early and the server speaks with Kokoro meanwhile.
+
+Both speak the same HTTP API (POST .../audio/speech -> WAV), so the flavour mostly changes text and voices.
 """
 from __future__ import annotations
 
 import io
 import os
 import re
+import threading
+import time
 
 import numpy as np
 
 from iriis.config import TTSConfig
 from iriis.tts.base import TTSEngine
+from iriis.tts.text_normalize import DIRECTION_RE, GROQ_VOICES, OPEN_VOICES, SOUND_TAG_RE, voice_for
 
-URL = "https://api.groq.com/openai/v1/audio/speech"
-MAX_CHARS = 200
-VOICES = {"autumn", "diana", "hannah", "austin", "daniel", "troy"}   # first three are female
-_DIRECTION = re.compile(r"\[[^\]]{1,40}\]")
+GROQ_URL = "https://api.groq.com/openai/v1/audio/speech"
+MAX_CHARS = 200            # Groq's per-request limit (the open server takes ~1200)
+OPEN_MAX_CHARS = 400
+WARM_FOR_S = 240           # the Modal container stays up 300 s after the last request
+_TAG = re.compile(r"\[[^\]]{1,40}\]|<[a-z]{3,8}>")
 
 
 def split_for_orpheus(text: str, limit: int = MAX_CHARS) -> list[str]:
-    """Split into <= limit-char pieces; a direction like [angry] carries over to the pieces after it."""
+    """Split into <= limit-char pieces; a [direction] carries over to the pieces after it."""
     parts = re.split(r"(?<=[.!?])\s+", text.strip())
     out: list[str] = []
     current_dir = ""
     for part in parts:
-        dirs = _DIRECTION.findall(part)
+        dirs = DIRECTION_RE.findall(part)
         if dirs:
-            current_dir = dirs[-1]
+            current_dir = f"[{dirs[-1]}]"
         while part:
             carry = current_dir and not part.startswith("[")
             room = limit - (len(current_dir) + 1 if carry else 0)   # leave space to repeat the direction
@@ -53,29 +61,75 @@ class OrpheusEngine(TTSEngine):
     def __init__(self, cfg: TTSConfig):
         import httpx
 
-        self.key = os.environ.get(cfg.orpheus_api_key_env, "")
-        if not self.key:
-            raise RuntimeError(f"Orpheus needs {cfg.orpheus_api_key_env} (a Groq API key)")
         self.cfg = cfg
-        self.voice = cfg.orpheus_voice if cfg.orpheus_voice in VOICES else "hannah"
-        self.http = httpx.Client(timeout=httpx.Timeout(30, connect=10))
-        self.name = f"orpheus:{self.voice}"
+        self.flavor = cfg.orpheus_flavor
+        if self.flavor == "open":
+            if not cfg.orpheus_url:
+                raise RuntimeError("tts.orpheus_url is not set (the Modal URL from `modal deploy`)")
+            self.url = cfg.orpheus_url.rstrip("/") + "/v1/audio/speech"
+            self.health_url = cfg.orpheus_url.rstrip("/") + "/health"
+            key_env, self.pool, self.limit = cfg.orpheus_token_env, OPEN_VOICES, OPEN_MAX_CHARS
+            self.model = "canopylabs/orpheus-3b-0.1-ft"
+        else:
+            self.url, self.health_url = cfg.orpheus_url or GROQ_URL, None
+            key_env, self.pool, self.limit = cfg.orpheus_api_key_env, GROQ_VOICES, MAX_CHARS
+            self.model = cfg.orpheus_model
+        self.key = os.environ.get(key_env, "")
+        if not self.key:
+            raise RuntimeError(f"Orpheus ({self.flavor}) needs {key_env}")
+        self.voice = voice_for(cfg.orpheus_voice, self.flavor) or self.pool[0]
+        self.http = httpx.Client(timeout=httpx.Timeout(60, connect=10))
+        self.name = f"orpheus-{self.flavor}:{self.voice}"
+        self.style = self.flavor          # text style for iriis.tts.text_normalize.normalize
+        self._warm_until = float("inf") if self.flavor == "groq" else 0.0
+        self._warming: threading.Thread | None = None
+
+    # ------------------------------------------------------------------ warm-up (open flavour)
+
+    @property
+    def warm(self) -> bool:
+        return time.time() < self._warm_until
+
+    def warm_up(self, wait: bool = False) -> None:
+        """Wake the GPU container in the background (its /health answers once the model is loaded)."""
+        if self.warm or self.health_url is None:
+            return
+        if self._warming is None or not self._warming.is_alive():
+            def ping():
+                try:
+                    r = self.http.get(self.health_url, timeout=900)
+                    if r.status_code == 200:
+                        self._warm_until = time.time() + WARM_FOR_S
+                except Exception:  # noqa: BLE001
+                    pass
+            self._warming = threading.Thread(target=ping, name="orpheus-warmup", daemon=True)
+            self._warming.start()
+        if wait:
+            self._warming.join()
+
+    # ------------------------------------------------------------------ synthesis
 
     def _one(self, text: str, voice: str) -> tuple[np.ndarray, int]:
         import soundfile as sf
-        r = self.http.post(URL, headers={"Authorization": f"Bearer {self.key}"},
-                           json={"model": self.cfg.orpheus_model, "voice": voice, "input": text, "response_format": "wav"})
+        r = self.http.post(self.url, headers={"Authorization": f"Bearer {self.key}"},
+                           json={"model": self.model, "voice": voice, "input": text, "response_format": "wav"})
         if r.status_code != 200:
             raise RuntimeError(f"Orpheus TTS error {r.status_code}: {r.text[:200]}")
         audio, sr = sf.read(io.BytesIO(r.content), dtype="float32", always_2d=True)
+        if self.flavor == "open":
+            self._warm_until = time.time() + WARM_FOR_S
         return audio.mean(axis=1), sr
 
     def synthesize(self, text: str, voice: str | None = None) -> np.ndarray:
-        voice = voice if voice in VOICES else self.voice
+        """`text` should already be normalised with style=self.style."""
+        if not self.warm:
+            self.warm_up()
+            raise RuntimeError("the Orpheus GPU is waking up")   # caller speaks this one with Kokoro
+        voice = voice_for(voice, self.flavor) or self.voice
         chunks, gap = [], None
-        for piece in split_for_orpheus(text):
-            if not re.search(r"\w", _DIRECTION.sub("", piece)):
-                continue   # a bare direction with no words
+        for piece in split_for_orpheus(text, self.limit):
+            if not re.search(r"\w", _TAG.sub("", SOUND_TAG_RE.sub("", piece))):
+                continue   # a bare tag with no words
             audio, sr = self._one(piece, voice)
             self.sample_rate = sr
             if gap is None:

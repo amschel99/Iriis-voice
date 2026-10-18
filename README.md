@@ -99,6 +99,26 @@ expressive model that really sounds angry, excited, sarcastic, loving or whisper
 - **Fallback:** if Groq fails or isn't configured, she keeps talking with Kokoro (calm). Change the voice with
   `tts.orpheus_voice` (female: hannah, diana, autumn).
 
+### Her own voice GPU (self-hosted Orpheus)
+
+Instead of Groq's rate-limited Orpheus, she can use the open-source Orpheus on your own serverless GPU (Modal).
+- **Billing:** you pay per second only while she speaks. When she's quiet for 5 minutes the GPU shuts off and costs nothing.
+- **Waking up:** the first sentence after a quiet spell waits for the GPU to wake, which takes about a minute.
+  Iriis starts waking it the moment you begin talking, and Kokoro fills in until it's ready.
+- **Voices:** tara (hers), leah, jess, mia, zoe, leo, dan, zac.
+- **Emotion:** it comes from her wording, plus real sounds: `<laugh> <chuckle> <sigh> <groan> <gasp> <yawn> <sniffle> <cough>`.
+
+One-time setup:
+1. **Hugging Face:** accept the model terms at https://huggingface.co/canopylabs/orpheus-3b-0.1-ft, then create a
+   *Read* token at https://huggingface.co/settings/tokens.
+2. **Modal:** sign up at https://modal.com, then run `.venv-deploy/Scripts/modal token new` (it opens your browser).
+3. **Secret:** `modal secret create iriis-orpheus HF_TOKEN=hf_... ORPHEUS_TOKEN=<random>`.
+4. **Deploy:** `modal deploy deploy/orpheus_modal.py`. It prints the URL. Smoke-test it with `modal run deploy/orpheus_modal.py`.
+5. **Railway Variables:** set `IRIIS__TTS__ORPHEUS_URL=<that URL>` and `ORPHEUS_TOKEN=<same random value>`.
+
+The default is `tts.orpheus_flavor: open`. To use Groq's hosted version instead, set
+`IRIIS__TTS__ORPHEUS_FLAVOR=groq` plus `GROQ_API_KEY`. That version has `[angry]`-style directions and rate limits.
+
 **Pasting long or multi-line text in Git Bash:** don't wrap it in `"…"`. Bash sends only the first line,
 and `!` inside double quotes triggers history expansion. Use a heredoc instead; everything between the markers
 is passed exactly:

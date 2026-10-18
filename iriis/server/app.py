@@ -284,6 +284,8 @@ def create_app(cfg: Config | None = None) -> FastAPI:
     async def chat(req: ChatRequest, request: Request):
         core: Core = request.app.state.core
         session = core.sessions.get(req.session_id)
+        if req.speak:
+            core.speech.warm_up()
         if not req.stream:
             async def ignore(ev, audio):
                 pass
@@ -407,12 +409,14 @@ def create_app(cfg: Config | None = None) -> FastAPI:
                 if kind == "hello":
                     opts.update({k: data[k] for k in ("session_id", "speak", "voice") if k in data})
                     session = core.sessions.get(opts["session_id"])
+                    core.speech.warm_up()            # a voice client connected: wake the voice GPU
                     await emit({"type": "ready", "session_id": session.id, "stt": core.speech.stt_name,
                                 "tts": core.speech.tts_name, "output_sample_rate": 24000}, None)
                 elif session is None:
                     await emit({"type": "error", "message": "send hello first"}, None)
                 elif kind == "start_utterance":
                     buf.clear()
+                    core.speech.warm_up()            # you started talking: be warm by the time she answers
                 elif kind == "end_utterance":
                     audio = from_pcm16(bytes(buf))
                     buf.clear()

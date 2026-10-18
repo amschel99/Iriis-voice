@@ -73,22 +73,45 @@ class LLMConfig(BaseModel):
     request_timeout_s: float = 120.0
 
 
-class TTSConfig(BaseModel):
-    # orpheus = expressive (real emotion, via Groq; needs GROQ_API_KEY). Falls back to kokoro, then piper.
-    backend: Literal["orpheus", "kokoro", "piper"] = "kokoro"
-    orpheus_model: str = "canopylabs/orpheus-v1-english"
-    orpheus_voice: str = "hannah"          # female: hannah, diana, autumn; male: troy, austin, daniel
-    orpheus_api_key_env: str = "GROQ_API_KEY"
-    # Casting sheet: how each voice sounds and what it suits. The AI casts characters from this, so
-    # describe what you HEAR (run `iriis voices`). The defaults are first guesses (nobody has listened yet).
-    voice_casting: dict[str, str] = Field(default_factory=lambda: {
+DEFAULT_CASTING = {
+    # Defaults are first guesses (nobody has listened yet): run `iriis voices` and describe what you HEAR.
+    "groq": {
         "hannah": "female; Iriis' own voice. Narrator, and herself in every non-story reply",
         "diana": "female; mature, composed: mothers, teachers, bosses, officials, the wise elder",
         "autumn": "female; youthful, bright: girls, best friends, excited or nervous young women",
         "troy": "male; deep, heavy: villains, guards, fathers, big tough men, menace",
         "austin": "male; young, casual: boys, students, friends, the funny sidekick",
         "daniel": "male; calm, measured: professionals, doctors, news readers, old wise men",
-    })
+    },
+    "open": {
+        "tara": "female; Iriis' own voice (the most natural Orpheus voice). Narrator, and herself in every non-story reply",
+        "leah": "female; mature, warm: mothers, teachers, bosses, the wise elder",
+        "jess": "female; lively, casual: best friends, gossip, sassy characters",
+        "mia": "female; young, bright: girls, students, nervous or excited young women",
+        "zoe": "female; soft, gentle: shy or kind characters, comforting moments",
+        "leo": "male; deep, steady: villains, guards, fathers, big tough men",
+        "dan": "male; casual, friendly: friends, the funny sidekick, everyday men",
+        "zac": "male; young, energetic: boys, students, excitable characters",
+    },
+}
+
+
+class TTSConfig(BaseModel):
+    # orpheus = expressive. Falls back to kokoro, then piper, whenever it is unavailable.
+    backend: Literal["orpheus", "kokoro", "piper"] = "kokoro"
+    # groq = hosted on Groq (needs GROQ_API_KEY; [angry]-style directions)
+    # open = self-hosted open-source Orpheus on a Modal GPU (deploy/orpheus_modal.py; <laugh>-style sounds)
+    orpheus_flavor: Literal["groq", "open"] = "groq"
+    orpheus_url: str = ""                  # open: the Modal URL from `modal deploy` (groq: leave empty)
+    orpheus_model: str = "canopylabs/orpheus-v1-english"
+    orpheus_voice: str = ""                # her own voice; default hannah (groq) / tara (open)
+    orpheus_api_key_env: str = "GROQ_API_KEY"
+    orpheus_token_env: str = "ORPHEUS_TOKEN"   # open: the ORPHEUS_TOKEN you put in the Modal secret
+    # Casting sheet per flavour: how each voice sounds and what it suits; the AI casts characters from it.
+    voice_casting: dict[str, dict[str, str]] = Field(default_factory=lambda: {k: dict(v) for k, v in DEFAULT_CASTING.items()})
+
+    def casting(self) -> dict[str, str]:
+        return self.voice_casting.get(self.orpheus_flavor) or DEFAULT_CASTING[self.orpheus_flavor]
     kokoro_model: str = "models/tts/kokoro-v1.0.int8.onnx"
     kokoro_voices: str = "models/tts/voices-v1.0.bin"
     voice: str = "af_heart"
