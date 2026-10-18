@@ -101,23 +101,38 @@ expressive model that really sounds angry, excited, sarcastic, loving or whisper
 
 ### Her own voice GPU (self-hosted Orpheus)
 
-Instead of Groq's rate-limited Orpheus, she can use the open-source Orpheus on your own serverless GPU (Modal).
-- **Billing:** you pay per second only while she speaks. When she's quiet for 5 minutes the GPU shuts off and costs nothing.
-- **Waking up:** the first sentence after a quiet spell waits for the GPU to wake, which takes about a minute.
-  Iriis starts waking it the moment you begin talking, and Kokoro fills in until it's ready.
+She can use the open-source Orpheus (`canopylabs/orpheus-3b-0.1-ft`) on your own GPU instead of Groq's rate-limited one.
 - **Voices:** tara (hers), leah, jess, mia, zoe, leo, dan, zac.
 - **Emotion:** it comes from her wording, plus real sounds: `<laugh> <chuckle> <sigh> <groan> <gasp> <yawn> <sniffle> <cough>`.
+- **One server, any host:** the voice server (`deploy/orpheus_server/`) is a Docker image that runs on any NVIDIA GPU with 24 GB.
+  GitHub builds it on every push to `main` that touches that folder, and publishes it free as
+  `ghcr.io/amschel99/iriis-orpheus:latest`. You can also build it by hand from the **Actions** tab ("Orpheus voice image").
+- **Railway can't host it:** Railway has no GPUs, and the model needs one to talk in real time.
 
-One-time setup:
-1. **Hugging Face:** accept the model terms at https://huggingface.co/canopylabs/orpheus-3b-0.1-ft, then create a
-   *Read* token at https://huggingface.co/settings/tokens.
-2. **Modal:** sign up at https://modal.com, then run `.venv-deploy/Scripts/modal token new` (it opens your browser).
-3. **Secret:** `modal secret create iriis-orpheus HF_TOKEN=hf_... ORPHEUS_TOKEN=<random>`.
-4. **Deploy:** `modal deploy deploy/orpheus_modal.py`. It prints the URL. Smoke-test it with `modal run deploy/orpheus_modal.py`.
-5. **Railway Variables:** set `IRIIS__TTS__ORPHEUS_URL=<that URL>` and `ORPHEUS_TOKEN=<same random value>`.
+**Option A: Hugging Face Inference Endpoints** (pay per minute, scales to zero, needs a card on Hugging Face)
+1. Make the image public. On GitHub, open your profile → **Packages** → `iriis-orpheus` → **Package settings** →
+   Change visibility → **Public**. The image contains no secrets.
+2. Accept the model terms at https://huggingface.co/canopylabs/orpheus-3b-0.1-ft, and keep a *Read* token from
+   https://huggingface.co/settings/tokens.
+3. At https://endpoints.huggingface.co, create a **New endpoint** and choose **Custom container**:
+   - **Image:** `ghcr.io/amschel99/iriis-orpheus:latest`, port **80**, health route **/health**
+   - **GPU:** Nvidia **L4** or **A10G** (24 GB). Set **Scale to zero** after 15 minutes idle.
+   - **Environment secrets:** `HF_TOKEN=<your read token>` and `ORPHEUS_TOKEN=<a random secret>`
+   - **Security:** **Public** is fine, because the server itself requires `ORPHEUS_TOKEN`. If you choose
+     **Protected**, also set `IRIIS__TTS__ORPHEUS_HOST_TOKEN_ENV=HF_TOKEN` and `HF_TOKEN` on Railway.
+4. On Railway, set `IRIIS__TTS__ORPHEUS_URL=<the endpoint URL>` and `ORPHEUS_TOKEN=<same secret>`.
 
-The default is `tts.orpheus_flavor: open`. To use Groq's hosted version instead, set
-`IRIIS__TTS__ORPHEUS_FLAVOR=groq` plus `GROQ_API_KEY`. That version has `[angry]`-style directions and rate limits.
+**Option B: RunPod** (as far as I know it accepts crypto as well as cards; check its billing page). Create a GPU Pod
+or Serverless endpoint from the same image, with HTTP port 80 and the same two environment variables. Then set the
+same two Railway variables.
+
+**Option C: Modal.** Use `deploy/orpheus_modal.py`. It needs a card on Modal.
+
+**Waking up.** Hosts that scale to zero take a minute or two to wake after a quiet spell. She starts waking the GPU
+the moment you begin talking, and Kokoro speaks until it's ready, so there's never silence.
+
+**Fallbacks.** Without your own GPU, she uses Groq's hosted Orpheus if `GROQ_API_KEY` is set. That version has
+`[angry]`-style directions and rate limits. Otherwise she uses Kokoro.
 
 **Pasting long or multi-line text in Git Bash:** don't wrap it in `"…"`. Bash sends only the first line,
 and `!` inside double quotes triggers history expansion. Use a heredoc instead; everything between the markers

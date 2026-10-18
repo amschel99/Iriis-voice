@@ -159,7 +159,7 @@ def test_cold_gpu_wakes_in_background_and_kokoro_covers(monkeypatch):
     eng, cfg = _open_engine(monkeypatch)
     assert eng.voice == "tara" and eng.name == "orpheus-open:tara"
     health_calls, posts = [], []
-    monkeypatch.setattr(eng.http, "get", lambda url, timeout=None: health_calls.append(url) or FakeResp(200))
+    monkeypatch.setattr(eng.http, "get", lambda url, headers=None, timeout=None: health_calls.append(url) or FakeResp(200))
     monkeypatch.setattr(eng.http, "post", lambda url, headers, json: posts.append((url, json)) or FakeResp(200, _wav()))
     with pytest.raises(RuntimeError, match="waking up"):
         eng.synthesize("Hello there.")            # cold: refuse quickly, start the warm-up
@@ -175,7 +175,8 @@ def test_server_uses_open_style_text_and_falls_back_when_cold(monkeypatch):
     eng, cfg = _open_engine(monkeypatch)
     speech = Speech(cfg)
     speech._tts = eng
-    monkeypatch.setattr(eng.http, "get", lambda url, timeout=None: FakeResp(503))   # never warms in this test
+    monkeypatch.setattr(eng.http, "get", lambda url, headers=None, timeout=None: FakeResp(503))   # never warms here
+    monkeypatch.setattr("iriis.tts.orpheus_engine.WARM_POLL_S", 0.01)
 
     class FakeKokoro:
         name, sample_rate = "kokoro:af_heart", 24000
@@ -204,3 +205,21 @@ def test_prompt_style_follows_what_is_usable(monkeypatch, tmp_path):
     monkeypatch.setenv("ORPHEUS_TOKEN", "ot")
     assert agent._voice_style() == "open"                     # own GPU wins once it exists
     assert "tara" in cfg.tts.casting()
+
+
+def test_warm_up_keeps_polling_a_booting_host(monkeypatch):
+    eng, _ = _open_engine(monkeypatch)
+    monkeypatch.setattr("iriis.tts.orpheus_engine.WARM_POLL_S", 0.01)
+    answers = iter([FakeResp(502), FakeResp(503), FakeResp(503), FakeResp(200)])
+    monkeypatch.setattr(eng.http, "get", lambda url, headers=None, timeout=None: next(answers))
+    eng.warm_up(wait=True)
+    assert eng.warm
+
+
+def test_protected_host_gets_its_token_and_ours_moves_to_a_header(monkeypatch):
+    monkeypatch.setenv("HF_TOKEN", "hf_x")
+    monkeypatch.setenv("ORPHEUS_TOKEN", "ot")
+    cfg = Config()
+    cfg.tts.orpheus_flavor, cfg.tts.orpheus_url, cfg.tts.orpheus_host_token_env = "open", "https://e.endpoints.huggingface.cloud", "HF_TOKEN"
+    eng = OrpheusEngine(cfg.tts)
+    assert eng.headers == {"Authorization": "Bearer hf_x", "X-Orpheus-Token": "ot"}

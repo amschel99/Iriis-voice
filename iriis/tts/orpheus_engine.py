@@ -24,7 +24,8 @@ from iriis.tts.text_normalize import DIRECTION_RE, GROQ_VOICES, OPEN_VOICES, SOU
 GROQ_URL = "https://api.groq.com/openai/v1/audio/speech"
 MAX_CHARS = 200            # Groq's per-request limit (the open server takes ~1200)
 OPEN_MAX_CHARS = 400
-WARM_FOR_S = 240           # the Modal container stays up 300 s after the last request
+WARM_FOR_S = 240           # the GPU host stays up >= 300 s after the last request
+WARM_POLL_S = 10
 _TAG = re.compile(r"\[[^\]]{1,40}\]|<[a-z]{3,8}>")
 
 
@@ -65,7 +66,7 @@ class OrpheusEngine(TTSEngine):
         self.flavor = cfg.orpheus_flavor
         if self.flavor == "open":
             if not cfg.orpheus_url:
-                raise RuntimeError("tts.orpheus_url is not set (the Modal URL from `modal deploy`)")
+                raise RuntimeError("tts.orpheus_url is not set (your voice server's URL)")
             self.url = cfg.orpheus_url.rstrip("/") + "/v1/audio/speech"
             self.health_url = cfg.orpheus_url.rstrip("/") + "/health"
             key_env, self.pool, self.limit = cfg.orpheus_token_env, OPEN_VOICES, OPEN_MAX_CHARS
@@ -77,6 +78,13 @@ class OrpheusEngine(TTSEngine):
         self.key = os.environ.get(key_env, "")
         if not self.key:
             raise RuntimeError(f"Orpheus ({self.flavor}) needs {key_env}")
+        # A host with its own auth (e.g. a *protected* Hugging Face endpoint) takes its token in Authorization;
+        # then our ORPHEUS_TOKEN travels in X-Orpheus-Token instead.
+        host_token = os.environ.get(cfg.orpheus_host_token_env, "") if cfg.orpheus_host_token_env else ""
+        if self.flavor == "open" and host_token:
+            self.headers = {"Authorization": f"Bearer {host_token}", "X-Orpheus-Token": self.key}
+        else:
+            self.headers = {"Authorization": f"Bearer {self.key}"}
         self.voice = voice_for(cfg.orpheus_voice, self.flavor) or self.pool[0]
         self.http = httpx.Client(timeout=httpx.Timeout(60, connect=10))
         self.name = f"orpheus-{self.flavor}:{self.voice}"
@@ -96,12 +104,18 @@ class OrpheusEngine(TTSEngine):
             return
         if self._warming is None or not self._warming.is_alive():
             def ping():
-                try:
-                    r = self.http.get(self.health_url, timeout=900)
-                    if r.status_code == 200:
-                        self._warm_until = time.time() + WARM_FOR_S
-                except Exception:  # noqa: BLE001
-                    pass
+                # A sleeping host answers 502/503 (or times out) while it boots and loads the model:
+                # keep asking for up to 15 minutes.
+                deadline = time.time() + 900
+                while time.time() < deadline:
+                    try:
+                        r = self.http.get(self.health_url, headers=self.headers, timeout=60)
+                        if r.status_code == 200:
+                            self._warm_until = time.time() + WARM_FOR_S
+                            return
+                    except Exception:  # noqa: BLE001
+                        pass
+                    time.sleep(WARM_POLL_S)
             self._warming = threading.Thread(target=ping, name="orpheus-warmup", daemon=True)
             self._warming.start()
         if wait:
@@ -111,7 +125,7 @@ class OrpheusEngine(TTSEngine):
 
     def _one(self, text: str, voice: str) -> tuple[np.ndarray, int]:
         import soundfile as sf
-        r = self.http.post(self.url, headers={"Authorization": f"Bearer {self.key}"},
+        r = self.http.post(self.url, headers=self.headers,
                            json={"model": self.model, "voice": voice, "input": text, "response_format": "wav"})
         if r.status_code != 200:
             raise RuntimeError(f"Orpheus TTS error {r.status_code}: {r.text[:200]}")
