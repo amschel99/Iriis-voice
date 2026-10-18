@@ -139,6 +139,21 @@ the moment you begin talking, and Kokoro speaks until it's ready, so there's nev
 **Fallbacks.** Without your own GPU, she uses Groq's hosted Orpheus if `GROQ_API_KEY` is set. That version has
 `[angry]`-style directions and rate limits. Otherwise she uses Kokoro.
 
+### Talking to her like a phone call
+
+- **Echo cancellation (WebRTC AEC3, via `livekit`).** Her own voice is subtracted from the mic, like a phone
+  call: 26–34 dB removed in testing. You can talk over her and she stops, and she doesn't hear herself.
+  On top of that, she ignores transcripts that match what she just said. Settings: `audio.echo_cancellation`,
+  `audio.noise_suppression`.
+- **Smart end-of-turn (Pipecat Smart Turn v3.2, BSD-2, on your PC).** It judges from your voice whether
+  you've finished. A finished thought gets an answer after 0.8 s; if you trailed off, she waits up to 2.5 s
+  more and joins the rest into one question. If you keep talking before she answers, your words are joined too.
+  Settings: `vad.smart_turn`, `vad.silence_ms`, `vad.smart_turn_wait_s`.
+- **Interruption awareness.** When you cut her off, she remembers exactly how far you'd heard, so she doesn't
+  repeat herself and knows what you missed.
+- **Conversation mode.** After "Hey Jarvis" she keeps listening for 24 h (`wakeword.followup_s`), and ignores
+  background speech and TV that isn't meant for her.
+
 **Pasting long or multi-line text in Git Bash:** don't wrap it in `"…"`. Bash sends only the first line,
 and `!` inside double quotes triggers history expansion. Use a heredoc instead; everything between the markers
 is passed exactly:

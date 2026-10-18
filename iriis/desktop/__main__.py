@@ -44,7 +44,10 @@ async def _main(args) -> None:
     if args.voice:
         from iriis.audio.playback import Player
         from iriis.desktop.local_voice import LocalVoice
-        player = Player(cfg.audio.output_device, 24000)
+        from iriis.audio.aec import make_echo_canceller
+        aec = make_echo_canceller(cfg.audio.echo_cancellation, cfg.audio.noise_suppression)
+        ui.info("echo cancellation: on (WebRTC AEC3)" if aec else "echo cancellation: off (echo gate only)")
+        player = Player(cfg.audio.output_device, 24000, aec=aec)
         local_voice = LocalVoice(cfg, player)
         if not args.quiet:
             agent.say_locally = local_voice.say   # "I'm connected / I'm not connected"

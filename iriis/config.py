@@ -21,6 +21,8 @@ class AudioConfig(BaseModel):
     sample_rate: int = 16000
     block_ms: int = 80  # 1280 samples at 16 kHz, what openWakeWord expects
     chime: bool = True
+    echo_cancellation: bool = True   # WebRTC AEC3: hear you while she talks, never hear herself
+    noise_suppression: bool = True
 
 
 class WakeWordConfig(BaseModel):
@@ -33,7 +35,10 @@ class WakeWordConfig(BaseModel):
 
 class VADConfig(BaseModel):
     threshold: float = 0.4
-    silence_ms: int = 1200
+    silence_ms: int = 800          # with smart_turn on, a finished thought is answered after this pause
+    smart_turn: bool = True        # Pipecat Smart Turn: judges from your voice whether you've finished
+    smart_turn_threshold: float = 0.5
+    smart_turn_wait_s: float = 2.5  # if you seem unfinished, wait this much longer for the rest
     min_speech_ms: int = 250
     max_utterance_s: float = 20.0
     no_speech_timeout_s: float = 8.0

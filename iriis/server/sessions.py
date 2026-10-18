@@ -29,6 +29,7 @@ class Session:
     last_used: float = field(default_factory=time.time)
     current: asyncio.Task | None = None
     echo: SelfEcho = field(default_factory=SelfEcho)   # what she said recently (to ignore her own voice)
+    heard_seq: int | None = None    # set by the client on interrupt: last audio chunk the user heard
 
     def resolve_confirmation(self, confirm_id: str | None, reply: str) -> bool:
         if not self.pending:
@@ -80,12 +81,34 @@ async def run_turn(session: Session, text: str, emit: Emit, *, speech=None, spea
 
     delivery = Delivery(voice)   # the AI's [emotion] and {voice} choices carry across sentences
 
+    sent: list[tuple[int, str, bool]] = []   # (seq, sentence, last chunk?) of the audio sent this turn
+    session.heard_seq = None
+
+    def heard() -> str:
+        """What the user actually heard before interrupting (whole sentences, plus the one cut off)."""
+        upto = session.heard_seq
+        if upto is None or not sent:
+            return ""
+        words, cut = [], ""
+        for seq, sentence, last in sent:
+            if seq > upto:
+                break
+            if last:
+                words.append(sentence)
+                cut = ""
+            else:
+                cut = sentence
+        if cut:
+            words.append(f"{cut.split()[0] if cut.split() else ''}... (cut off mid-sentence)")
+        return " ".join(words)
+
     async def send_audio(audio, sr, sentence: str, last: bool) -> None:
         nonlocal seq
         if "first_audio_ms" not in timings:
             timings["first_audio_ms"] = (time.perf_counter() - t0) * 1000
         seq += 1
         data = pcm16(audio)
+        sent.append((seq, strip_directions(sentence), last))
         if last:   # remember her words as of when they finish playing (her own echo can come back then)
             session.echo.said(strip_directions(sentence), at=time.time() + len(audio) / sr + 1.0)
         await emit({"type": "audio", "seq": seq, "sample_rate": sr, "format": "pcm_s16le", "bytes": len(data),
@@ -188,13 +211,20 @@ async def run_turn(session: Session, text: str, emit: Emit, *, speech=None, spea
     def show(kind: str, text: str) -> None:
         asyncio.get_running_loop().create_task(emit({"type": kind, "text": text}, None))
 
-    cb = TurnCallbacks(say=say, confirm=confirm, show=show)
+    cb = TurnCallbacks(say=say, confirm=confirm, show=show, heard=heard)
     try:
         async with session.lock:
             result = await session.agent.handle(text, cb)
         if worker:
             await tts_q.put(None)
-            await worker
+            try:
+                await worker
+            except asyncio.CancelledError:
+                # Interrupted while her finished reply was still playing: remember only what you heard.
+                said = heard()
+                if said and result.text:
+                    session.agent.revise_last_reply(f"{said} [The user interrupted me here and did not hear the rest.]")
+                raise
         timings.update({k: v for k, v in result.timings.items()})
         done = {"type": "done", "session_id": session.id, "text": strip_directions(result.text),
                 "tool_calls": [{"name": t["name"], "arguments": t["arguments"]} for t in result.tool_calls],

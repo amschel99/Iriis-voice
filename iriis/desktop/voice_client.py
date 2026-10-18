@@ -32,6 +32,8 @@ class RemoteVoiceClient:
         self.player = player or Player(cfg.audio.output_device, OUT_SR)
         self.local_voice = local_voice
         self.vad = SileroVAD()
+        from iriis.audio.turn import load_smart_turn
+        self.turn = load_smart_turn(cfg.vad.smart_turn)
         self.sink: asyncio.Queue | None = None
         self.ws = None
         self.turn_done = asyncio.Event()
@@ -125,8 +127,35 @@ class RemoteVoiceClient:
             if ev and ev.kind == "timeout":
                 return None
             if ev and ev.kind == "speech_end":
+                audio = ev.audio
+                if audio is not None and self.turn is not None and not self.awaiting_confirm:
+                    audio = await self._until_finished(q, audio)
                 self.t_end = time.perf_counter()
-                return ev.audio
+                return audio
+
+    async def _until_finished(self, q: asyncio.Queue, audio: np.ndarray) -> np.ndarray:
+        """You paused. If your voice says you haven't finished your thought, keep listening a little
+        longer and join what comes next, instead of answering half a sentence."""
+        v = self.cfg.vad
+        for _ in range(3):
+            p = await asyncio.to_thread(self.turn.probability_complete, audio)
+            if p >= v.smart_turn_threshold:
+                return audio
+            self.ui.info(f"(sounds unfinished, p={p:.2f}: waiting for the rest)")
+            ep = Endpointer(self.vad, v.threshold, v.silence_ms, v.min_speech_ms, v.max_utterance_s, v.smart_turn_wait_s)
+            more = None
+            while True:
+                ev = ep.feed(await q.get())
+                if ev and ev.kind == "timeout":
+                    return audio                     # you really were done
+                if ev and ev.kind == "speech_end":
+                    more = ev.audio
+                    break
+            if more is None:
+                return audio
+            gap = np.zeros(int(self.cfg.audio.sample_rate * 0.25), dtype=np.float32)
+            audio = np.concatenate([audio, gap, more])
+        return audio
 
     async def _barge_in(self) -> tuple[str, list[np.ndarray]]:
         """Returns ("continued", audio) if you keep talking before she has said anything (you only paused:
@@ -151,7 +180,10 @@ class RemoteVoiceClient:
                 continue
             rms = float(np.sqrt(np.mean(block ** 2)))
             echo = self.player.echo_level
-            gated = echo > 0 and rms < echo * self.cfg.barge_in.echo_gate_ratio
+            ratio = self.cfg.barge_in.echo_gate_ratio
+            if getattr(self.player, "aec", None) is not None:
+                ratio = min(ratio, 0.2)   # AEC leaves ~1-3% of her voice in the mic: a normal speaking voice gets through
+            gated = echo > 0 and rms < echo * ratio
             for p in vad.process(block):
                 run = run + 1 if (p >= self.cfg.vad.threshold and not gated) else max(0, run - 1)
             if run >= need:
@@ -165,7 +197,7 @@ class RemoteVoiceClient:
             if isinstance(raw, bytes):
                 if pending_audio is not None:
                     pcm = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
-                    self.player.play(pcm, pending_audio.get("sample_rate", OUT_SR))
+                    self.player.play(pcm, pending_audio.get("sample_rate", OUT_SR), tag=pending_audio.get("seq"))
                     self.heard_reply = True
                     if (self.awaiting_confirm and pending_audio.get("last", True)
                             and pending_audio.get("text", "").strip() == self.confirm_question.strip()):
@@ -227,7 +259,8 @@ class RemoteVoiceClient:
             settled.cancel()
             self.player.stop()
             if self.ws is not None:
-                await self.ws.send(json.dumps({"type": "interrupt"}))
+                # Tell her exactly how far you'd heard, so she knows what you missed.
+                await self.ws.send(json.dumps({"type": "interrupt", "heard_seq": self.player.current_tag}))
             kind, heard = monitor.result()
             self.ui.info("(you kept talking: waiting for the rest)" if kind == "continued" else "(interrupted)")
             return kind, heard
@@ -257,7 +290,8 @@ class RemoteVoiceClient:
         elif cfg.wakeword.mode == "push_to_talk":
             from iriis.audio.wakeword import PushToTalk
             self.ptt = PushToTalk(cfg.wakeword.push_to_talk_key)
-        self.mic = MicStream(cfg.audio.input_device, cfg.audio.sample_rate, cfg.audio.block_ms)
+        self.mic = MicStream(cfg.audio.input_device, cfg.audio.sample_rate, cfg.audio.block_ms,
+                             aec=getattr(self.player, "aec", None))
         await self.mic.start()
         pump = asyncio.create_task(self._pump())
         link = asyncio.create_task(self._keep_connected())

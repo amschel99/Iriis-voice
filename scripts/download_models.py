@@ -38,6 +38,9 @@ FILES: dict[str, list[tuple[str, str]]] = {
         (PIPER + "en_GB/alba/medium/en_GB-alba-medium.onnx", "tts/en_GB-alba-medium.onnx"),
         (PIPER + "en_GB/alba/medium/en_GB-alba-medium.onnx.json", "tts/en_GB-alba-medium.onnx.json"),
     ],
+    "turn": [   # Pipecat Smart Turn v3.2 (BSD-2): end-of-turn detection from your voice
+        ("https://huggingface.co/pipecat-ai/smart-turn-v3/resolve/main/smart-turn-v3.2-cpu.onnx", "turn/smart-turn-v3.2-cpu.onnx"),
+    ],
     "parakeet": [
         (SHERPA + "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8.tar.bz2", "stt/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8.tar.bz2"),
     ],

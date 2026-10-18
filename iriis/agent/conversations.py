@@ -96,6 +96,17 @@ class ConversationStore:
         rows = self.db.execute("SELECT MAX(created) FROM messages WHERE session_id = ? AND role != 'reset'", (session_id,))
         return float(rows[0][0]) if rows and rows[0][0] is not None else None
 
+    def amend_last_reply(self, session_id: str, content: str) -> None:
+        """Replace her latest reply in this conversation (e.g. with only the part the user heard)."""
+        with self._lock:
+            for i in range(len(self._pending) - 1, -1, -1):
+                s, role, _, created = self._pending[i]
+                if s == session_id and role == "assistant":
+                    self._pending[i] = (s, role, content, created)
+                    return
+        self.db.execute("UPDATE messages SET content = ? WHERE id = (SELECT MAX(id) FROM messages "
+                        "WHERE session_id = ? AND role = 'assistant')", (content, session_id))
+
     def reset(self, session_id: str) -> None:
         self.append(session_id, "reset", "")   # through the buffer, so ordering is kept
         self.db.execute("DELETE FROM conversation_summaries WHERE session_id = ?", (session_id,))

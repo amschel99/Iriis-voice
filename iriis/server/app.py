@@ -449,6 +449,8 @@ def create_app(cfg: Config | None = None) -> FastAPI:
                 elif kind == "wake":
                     core.speech.warm_up()            # "Hey Jarvis": you're definitely talking to her
                 elif kind == "interrupt":
+                    if session is not None and data.get("heard_seq") is not None:
+                        session.heard_seq = int(data["heard_seq"])
                     interrupt()
                 elif kind == "reset":
                     await asyncio.to_thread(core.conversations.reset, session.id)

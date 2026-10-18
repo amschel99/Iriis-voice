@@ -36,7 +36,8 @@ def chime(sr: int = 24000, rising: bool = True) -> np.ndarray:
 class Player:
     """Plays queued float32 clips. `stop()` cuts audio within one block (~20 ms)."""
 
-    def __init__(self, device: int | str | None = None, sample_rate: int = 24000):
+    def __init__(self, device: int | str | None = None, sample_rate: int = 24000, aec=None):
+        self.aec = aec   # fed with everything played, so the mic can subtract it
         self.device = resolve_device(device, "output")
         self.sample_rate = sample_rate
         self.q: queue.Queue[np.ndarray | None] = queue.Queue()
@@ -44,14 +45,16 @@ class Player:
         self._idle = threading.Event()
         self._idle.set()
         self.level = 0.0                  # RMS of what is being played right now
+        self.current_tag = None           # tag of the clip being played (what the listener is hearing)
         self._recent_levels: list[tuple[float, float]] = []   # (time, rms) of the last ~0.6 s played
         self.last_audio_end = 0.0         # time.monotonic() when the speaker last went quiet
         self._thread = threading.Thread(target=self._run, name="player", daemon=True)
         self._thread.start()
 
-    def play(self, audio: np.ndarray, sr: int) -> None:
+    def play(self, audio: np.ndarray, sr: int, tag=None) -> None:
+        """`tag` (e.g. the audio chunk's seq) is reported as current_tag while that clip plays."""
         self._idle.clear()
-        self.q.put(resample(audio.astype(np.float32), sr, self.sample_rate))
+        self.q.put((resample(audio.astype(np.float32), sr, self.sample_rate), tag))
 
     @property
     def echo_level(self) -> float:
@@ -94,6 +97,9 @@ class Player:
                     continue
                 if clip is None:
                     break
+                clip, tag = clip
+                if tag is not None:
+                    self.current_tag = tag
                 self._stop_now.clear()
                 for i in range(0, len(clip), block):
                     if self._stop_now.is_set():
@@ -103,6 +109,11 @@ class Player:
                     now = time.monotonic()
                     self._recent_levels = [(t, l) for t, l in self._recent_levels if now - t < 0.6] + [(now, self.level)]
                     out.write(chunk.reshape(-1, 1))
+                    if self.aec is not None:
+                        try:
+                            self.aec.feed_far(chunk, self.sample_rate)
+                        except Exception:  # noqa: BLE001
+                            pass
                 self.level = 0.0
 
     def close(self) -> None:

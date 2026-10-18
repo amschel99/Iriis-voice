@@ -43,6 +43,7 @@ class TurnCallbacks:
     confirm: Callable[[str], Awaitable[str]]               # ask a question, return the user's live reply
     show: Callable[[str, str], None] = lambda kind, text: None  # UI-only output: ("tool", ...), ("screen", ...)
     on_first_token: Callable[[], None] = lambda: None
+    heard: Callable[[], str] | None = None   # on interruption: the words the user actually heard
 
 
 @dataclass
@@ -97,6 +98,18 @@ class Agent:
         return self.cfg.tts.effective_flavor() or "plain"
 
     # ------------------------------------------------------------------ persistence
+
+    def revise_last_reply(self, content: str) -> None:
+        """The user interrupted after the reply was written but before they'd heard all of it."""
+        for m in reversed(self.history.messages):
+            if m.get("role") == "assistant" and not m.get("tool_calls"):
+                m["content"] = content
+                break
+        if self.store:
+            try:
+                self.store.amend_last_reply(self.session_id, content)
+            except Exception:  # noqa: BLE001
+                pass
 
     def _save(self, user_text: str, reply: str) -> None:
         if not self.store:
@@ -235,8 +248,15 @@ class Agent:
                 raise   # cancelled before she said a word (you were still talking): keep no half-request
             # Keep only the user's words: a half-finished tool exchange would be rejected by
             # OpenAI-style APIs on the next turn (every tool call needs its result).
-            self.history.extend([turn[0], {"role": "assistant", "content": "(interrupted by the user)"}])
-            self._save(user_text, "(interrupted by the user)")
+            heard = ""
+            try:
+                heard = cb.heard() if cb.heard else ""
+            except Exception:  # noqa: BLE001
+                pass
+            note = (f"{heard} [The user interrupted me here and did not hear the rest.]" if heard
+                    else "(interrupted by the user)")
+            self.history.extend([turn[0], {"role": "assistant", "content": note}])
+            self._save(user_text, note)
             raise
 
     async def _run(self, turn, tools, known, cb, result, t0) -> TurnResult:
@@ -248,7 +268,8 @@ class Agent:
                 self._spoke = True
                 await say_to_user(sentence)
 
-        cb = TurnCallbacks(say=say_unless_silent, confirm=cb.confirm, show=cb.show, on_first_token=cb.on_first_token)
+        cb = TurnCallbacks(say=say_unless_silent, confirm=cb.confirm, show=cb.show, on_first_token=cb.on_first_token,
+                           heard=cb.heard)
         nudged = False          # retried once after an empty reply
         nudge: list[dict[str, Any]] = []
         for _iteration in range(self.cfg.llm.max_tool_iterations + 2):

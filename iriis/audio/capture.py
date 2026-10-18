@@ -9,7 +9,8 @@ from iriis.audio.devices import resolve_device
 
 
 class MicStream:
-    def __init__(self, device: int | str | None = None, sample_rate: int = 16000, block_ms: int = 80):
+    def __init__(self, device: int | str | None = None, sample_rate: int = 16000, block_ms: int = 80, aec=None):
+        self.aec = aec   # iriis.audio.aec.EchoCanceller: removes her own voice from the mic
         self.device = resolve_device(device, "input")
         self.sample_rate = sample_rate
         self.blocksize = int(sample_rate * block_ms / 1000)
@@ -22,6 +23,11 @@ class MicStream:
         if status and status.input_overflow:
             self.overflows += 1
         block = indata[:, 0].astype(np.float32, copy=True)
+        if self.aec is not None:
+            try:
+                block = self.aec.clean(block)
+            except Exception:  # noqa: BLE001  (never lose the mic over echo cancellation)
+                pass
         assert self._loop is not None
         self._loop.call_soon_threadsafe(self._put, block)
 

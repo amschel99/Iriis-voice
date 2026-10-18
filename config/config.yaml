@@ -12,6 +12,8 @@ audio:
   sample_rate: 16000           # input pipeline rate (wake word, VAD and STT all use 16 kHz)
   block_ms: 80                 # mic block size; 80 ms = 1280 samples, what openWakeWord wants
   chime: true                  # short tone when Iriis starts listening
+  echo_cancellation: true      # like a phone call: removes her own voice from the mic (needs `livekit`)
+  noise_suppression: true
 
 wakeword:
   mode: wakeword               # wakeword | push_to_talk | always (no trigger; VAD only)
@@ -22,7 +24,9 @@ wakeword:
 
 vad:                           # Silero VAD endpointing
   threshold: 0.4               # lower catches quieter speech
-  silence_ms: 1200             # this much silence ends your turn (pause to think without being cut off)
+  silence_ms: 800              # pause before she answers a FINISHED thought
+  smart_turn: true             # judges from your voice whether you've finished (Pipecat Smart Turn, BSD-2)
+  smart_turn_wait_s: 2.5       # if you sound unfinished, wait this much longer for the rest
   min_speech_ms: 250           # shorter blips are ignored
   max_utterance_s: 20
   no_speech_timeout_s: 8       # after the wake word, give up if you say nothing (falling tone)

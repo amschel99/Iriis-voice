@@ -232,3 +232,52 @@ def test_request_cancelled_before_she_speaks_leaves_no_trace(db, tmp_path):
     asyncio.run(run())
     assert a.history.messages == []
     assert ConversationStore(db).search("explain") == []
+
+
+def test_interruption_remembers_what_the_user_heard(tmp_path):
+    """You cut her off during sentence 2: her memory keeps sentence 1 + where she was cut off."""
+    import numpy as np
+    from iriis.agent.loop import Agent
+    from iriis.agent.permissions import PermissionManager
+    from iriis.config import Config
+    from iriis.server.sessions import Session, run_turn
+
+    class ThreeSentences(LLMClient):
+        model = "fake"
+        async def chat_stream(self, messages, tools=None, model=None):
+            for t in ["The first option is paraffin. ", "The second option is a salt hydrate. ", "The third is water gel."]:
+                yield LLMEvent(text=t)
+            yield LLMEvent(done=True)
+        async def health(self):
+            return True, ""
+
+    class SlowSpeech:
+        async def stream(self, text, voice=None):
+            for _ in range(2):
+                await asyncio.sleep(0.05)
+                yield np.zeros(4, dtype=np.float32), 24000
+
+    cfg = Config()
+    cfg.permissions.audit_log = str(tmp_path / "a.jsonl")
+    agent = Agent(cfg, ThreeSentences(), None, PermissionManager(cfg, []))
+    session = Session("s", agent)
+    seqs = []
+
+    async def emit(ev, data):
+        if ev["type"] == "audio":
+            seqs.append(ev["seq"])
+
+    async def go():
+        task = asyncio.create_task(run_turn(session, "what are my options", emit, speech=SlowSpeech(), speak=True))
+        while len(seqs) < 3:                 # sentence 1 (2 chunks) + first chunk of sentence 2 heard
+            await asyncio.sleep(0.01)
+        session.heard_seq = 3
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+    asyncio.run(go())
+    said = agent.history.messages[-1]["content"]
+    assert said.startswith("The first option is paraffin.")
+    assert "cut off" in said and "interrupted me here" in said and "third" not in said
