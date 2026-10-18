@@ -153,3 +153,46 @@ class Speech:
 
     async def synthesize(self, text: str, voice: str | None = None) -> tuple[np.ndarray, int]:
         return await asyncio.to_thread(self._synthesize, text, voice)
+
+    async def stream(self, text: str, voice: str | None = None):
+        """Async iterator of (audio, sample_rate) chunks, as soon as the voice produces them.
+        Streams from the GPU voice when it's warm; otherwise (or if it fails before the first chunk)
+        yields the whole sentence once from the fallback path."""
+        tagged_voice, plain = take_voice(text)
+        use_voice = tagged_voice or voice
+        tts = self._load_tts()
+        if tts.name.startswith("orpheus") and hasattr(tts, "stream"):
+            spoken = normalize(plain, self.cfg.tts.currency, style=tts.style)
+            if not spoken:
+                return
+            loop = asyncio.get_running_loop()
+            q: asyncio.Queue = asyncio.Queue()
+            stop = threading.Event()
+
+            def produce():
+                try:
+                    for chunk in tts.stream(spoken, use_voice, stop=stop):
+                        loop.call_soon_threadsafe(q.put_nowait, ("chunk", chunk))
+                    loop.call_soon_threadsafe(q.put_nowait, ("end", None))
+                except Exception as e:  # noqa: BLE001
+                    loop.call_soon_threadsafe(q.put_nowait, ("error", e))
+
+            threading.Thread(target=produce, name="tts-stream", daemon=True).start()
+            got_any = False
+            try:
+                while True:
+                    kind, val = await q.get()
+                    if kind == "chunk":
+                        got_any = True
+                        yield val, tts.sample_rate
+                    elif kind == "end":
+                        return
+                    else:
+                        if got_any:
+                            return   # failed mid-sentence: what was said stands
+                        break        # failed before any audio: say it with the fallback voice
+            finally:
+                stop.set()           # barge-in / cancelled turn: abandon the GPU request
+        audio, sr = await self.synthesize(text, voice)
+        if len(audio):
+            yield audio, sr

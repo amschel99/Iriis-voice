@@ -9,6 +9,8 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
+import numpy as np
+
 from iriis.agent.loop import Agent, TurnCallbacks
 from iriis.server.speech import pcm16, wav_bytes
 from iriis.tts.text_normalize import Delivery, strip_directions
@@ -76,30 +78,81 @@ async def run_turn(session: Session, text: str, emit: Emit, *, speech=None, spea
 
     delivery = Delivery(voice)   # the AI's [emotion] and {voice} choices carry across sentences
 
-    async def tts_worker():
+    async def send_audio(audio, sr, sentence: str, last: bool) -> None:
         nonlocal seq
-        while (item := await tts_q.get()) is not None:
-            sentence, is_question = item
-            if is_question:
-                spoken, use_voice = sentence, voice   # confirmations: always her own, plain voice
-            else:
-                spoken, use_voice = delivery.apply(sentence)
-            try:
-                audio, sr = await speech.synthesize(spoken, use_voice)
-            except Exception as e:  # noqa: BLE001
-                await emit({"type": "error", "message": f"TTS failed: {e}"}, None)
-                continue
-            if len(audio) == 0:
-                continue
-            if "first_audio_ms" not in timings:
-                timings["first_audio_ms"] = (time.perf_counter() - t0) * 1000
-            seq += 1
-            if audio_format == "pcm":
-                data = pcm16(audio)
-                await emit({"type": "audio", "seq": seq, "sample_rate": sr, "format": "pcm_s16le", "bytes": len(data), "text": strip_directions(sentence)}, data)
-            else:
-                await emit({"type": "audio", "seq": seq, "format": "wav", "text": strip_directions(sentence),
-                            "data": base64.b64encode(wav_bytes(audio, sr)).decode()}, None)
+        if "first_audio_ms" not in timings:
+            timings["first_audio_ms"] = (time.perf_counter() - t0) * 1000
+        seq += 1
+        data = pcm16(audio)
+        await emit({"type": "audio", "seq": seq, "sample_rate": sr, "format": "pcm_s16le", "bytes": len(data),
+                    "text": strip_directions(sentence), "last": last}, data)
+
+    async def fill(spoken: str, use_voice, out: asyncio.Queue) -> None:
+        """Stream one sentence's audio into `out` (None marks the end)."""
+        try:
+            async for audio, sr in speech.stream(spoken, use_voice):
+                if len(audio):
+                    await out.put((audio, sr))
+        except Exception as e:  # noqa: BLE001
+            await emit({"type": "error", "message": f"TTS failed: {e}"}, None)
+        finally:
+            await out.put(None)
+
+    async def tts_worker():
+        """Sentences are voiced in order, but the next one starts generating while the current one
+        plays (the GPU batches both nearly for free), so speech flows without gaps."""
+        order: asyncio.Queue = asyncio.Queue()
+        active: list[asyncio.Task] = []
+
+        async def producer():
+            while (item := await tts_q.get()) is not None:
+                sentence, is_question = item
+                if is_question:
+                    spoken, use_voice = sentence, voice   # confirmations: always her own, plain voice
+                else:
+                    spoken, use_voice = delivery.apply(sentence)
+                running = [t for t in active if not t.done()]
+                while len(running) >= 2:              # the sentence being heard + one prefetched
+                    await asyncio.wait(running, return_when=asyncio.FIRST_COMPLETED)
+                    running = [t for t in active if not t.done()]
+                active[:] = running
+                out: asyncio.Queue = asyncio.Queue()
+                active.append(asyncio.create_task(fill(spoken, use_voice, out)))
+                await order.put((out, sentence))
+            await order.put(None)
+
+        async def consumer():
+            nonlocal seq
+            while (entry := await order.get()) is not None:
+                out, sentence = entry
+                if audio_format == "pcm":
+                    prev = None                       # hold one chunk back so the last can be flagged
+                    while (chunk := await out.get()) is not None:
+                        if prev is not None:
+                            await send_audio(*prev, sentence, last=False)
+                        prev = chunk
+                    if prev is not None:
+                        await send_audio(*prev, sentence, last=True)
+                else:                                 # SSE: one WAV per sentence
+                    parts, sr = [], 24000
+                    while (chunk := await out.get()) is not None:
+                        parts.append(chunk[0])
+                        sr = chunk[1]
+                    if parts:
+                        if "first_audio_ms" not in timings:
+                            timings["first_audio_ms"] = (time.perf_counter() - t0) * 1000
+                        seq += 1
+                        await emit({"type": "audio", "seq": seq, "format": "wav", "text": strip_directions(sentence),
+                                    "data": base64.b64encode(wav_bytes(np.concatenate(parts), sr)).decode()}, None)
+
+        prod = asyncio.create_task(producer())
+        try:
+            await consumer()
+            await prod
+        finally:
+            prod.cancel()
+            for t in active:
+                t.cancel()
 
     worker = asyncio.create_task(tts_worker()) if speak and speech else None
 

@@ -137,6 +137,40 @@ class OrpheusEngine(TTSEngine):
             self._warm_until = time.time() + WARM_FOR_S
         return audio.mean(axis=1), sr
 
+    def stream(self, text: str, voice: str | None = None, stop=None):
+        """Yield float32 audio chunks while the GPU is still generating (open flavour: /stream endpoint).
+        `stop` is an optional threading.Event to abandon the request (barge-in). Groq: one whole chunk."""
+        if not self.warm:
+            self.warm_up()
+            raise RuntimeError("the Orpheus GPU is waking up")   # caller speaks this one with Kokoro
+        if self.flavor != "open":
+            yield self.synthesize(text, voice)
+            return
+        voice = voice_for(voice, self.flavor) or self.voice
+        first = True
+        for piece in split_for_orpheus(text, self.limit):
+            if not re.search(r"\w", _TAG.sub("", SOUND_TAG_RE.sub("", piece))):
+                continue
+            if not first:
+                yield np.zeros(int(self.sample_rate * 0.12), dtype=np.float32)
+            first = False
+            with self.http.stream("POST", self.url + "/stream", headers=self.headers,
+                                  json={"model": self.model, "voice": voice, "input": piece}) as r:
+                if r.status_code != 200:
+                    raise RuntimeError(f"Orpheus stream error {r.status_code}: {r.read()[:200]!r}")
+                self.sample_rate = int(r.headers.get("x-sample-rate", self.sample_rate))
+                buf = b""
+                for data in r.iter_bytes():
+                    if stop is not None and stop.is_set():
+                        return
+                    buf += data
+                    n = len(buf) // 2 * 2
+                    if n:
+                        pcm = np.frombuffer(buf[:n], dtype="<i2").astype(np.float32) / 32768.0
+                        buf = buf[n:]
+                        yield (pcm * self.cfg.volume).clip(-1, 1)
+            self._warm_until = time.time() + WARM_FOR_S
+
     def synthesize(self, text: str, voice: str | None = None) -> np.ndarray:
         """`text` should already be normalised with style=self.style."""
         if not self.warm:

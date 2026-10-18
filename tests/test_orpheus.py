@@ -107,9 +107,9 @@ def test_turn_passes_chosen_voices_to_tts(tmp_path, monkeypatch):
 
     class FakeSpeech:
         calls = []
-        async def synthesize(self, text, voice=None):
+        async def stream(self, text, voice=None):
             self.calls.append((text, voice))
-            return np.zeros(10, dtype=np.float32), 24000
+            yield np.zeros(10, dtype=np.float32), 24000
 
     cfg = Config()
     cfg.permissions.audit_log = str(tmp_path / "a.jsonl")
@@ -228,3 +228,65 @@ def test_protected_host_gets_its_token_and_ours_moves_to_a_header(monkeypatch):
 def test_open_flavor_sends_token_in_header_hf_does_not_strip(monkeypatch):
     eng, _ = _open_engine(monkeypatch)
     assert eng.headers["X-Orpheus-Token"] == "ot"
+
+
+
+def test_streamed_audio_stays_in_order_and_flags_last_chunk(tmp_path):
+    """Sentence 2 is prefetched and may finish first; the listener must still hear 1 then 2."""
+    import asyncio
+    from iriis.agent.loop import Agent
+    from iriis.agent.permissions import PermissionManager
+    from iriis.llm.base import LLMClient, LLMEvent
+    from iriis.server.sessions import Session, run_turn
+
+    class TwoSentences(LLMClient):
+        model = "fake"
+        async def chat_stream(self, messages, tools=None, model=None):
+            yield LLMEvent(text="First sentence is slow. ")
+            yield LLMEvent(text="Second one is quick.")
+            yield LLMEvent(done=True)
+        async def health(self):
+            return True, ""
+
+    class SlowFirstSpeech:
+        async def stream(self, text, voice=None):
+            n, delay = (3, 0.05) if text.startswith("First") else (2, 0.0)
+            for i in range(n):
+                await asyncio.sleep(delay)
+                yield np.full(4, i, dtype=np.float32), 24000
+
+    cfg = Config()
+    cfg.permissions.audit_log = str(tmp_path / "a.jsonl")
+    agent = Agent(cfg, TwoSentences(), None, PermissionManager(cfg, []))
+    audio_events = []
+
+    async def emit(ev, data):
+        if ev["type"] == "audio":
+            audio_events.append((ev["text"], ev["last"], ev["seq"]))
+
+    asyncio.run(run_turn(Session("s", agent), "go", emit, speech=SlowFirstSpeech(), speak=True))
+    texts = [t for t, _, _ in audio_events]
+    assert texts == ["First sentence is slow."] * 3 + ["Second one is quick."] * 2
+    assert [l for _, l, _ in audio_events] == [False, False, True, False, True]
+    assert [q for _, _, q in audio_events] == [1, 2, 3, 4, 5]
+
+
+def test_speech_stream_falls_back_to_kokoro_when_gpu_is_cold(monkeypatch):
+    import asyncio
+    from iriis.server.speech import Speech
+    eng, cfg = _open_engine(monkeypatch)
+    monkeypatch.setattr(eng.http, "get", lambda url, headers=None, timeout=None: FakeResp(503))
+    monkeypatch.setattr("iriis.tts.orpheus_engine.WARM_POLL_S", 0.01)
+    speech = Speech(cfg)
+    speech._tts = eng
+
+    class FakeKokoro:
+        name, sample_rate = "kokoro:af_heart", 24000
+        def synthesize(self, text):
+            return np.ones(30, dtype=np.float32)
+    speech._fallback = FakeKokoro()
+
+    async def collect():
+        return [a async for a in speech.stream("<laugh> Hello there.")]
+    chunks = asyncio.run(collect())
+    assert len(chunks) == 1 and len(chunks[0][0]) == 30      # whole sentence from Kokoro, no silence
