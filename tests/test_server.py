@@ -50,7 +50,8 @@ def make_client(monkeypatch, script, tmp_path):
     cfg.server.cloud_servers = ["time_and_calc"]
     cfg.server.stt = False
     cfg.server.tts = False
-    cfg.memory.db_path = str(tmp_path / "mem.sqlite3")
+    monkeypatch.setenv("IRIIS_SQLITE_PATH", str(tmp_path / "iriis.sqlite3"))
+    monkeypatch.delenv("DATABASE_URL", raising=False)
     cfg.permissions.audit_log = str(tmp_path / "audit.jsonl")
     return TestClient(create_app(cfg)), fake
 

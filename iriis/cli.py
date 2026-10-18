@@ -214,6 +214,7 @@ def _print_status(args) -> tuple[bool, str]:
         problems = info.get("problems") or []
         print(f"  Brain         : {GREEN}online{RESET} at {summary}")
         print(f"                  LLM {info['llm']['model']} · STT {info.get('stt')} · TTS {info.get('tts')} · {info.get('tools')} tools")
+        print(f"                  storage {info.get('storage', '?')}")
         for p in problems:
             print(f"                  {YELLOW}! {p}{RESET}")
     else:

@@ -107,7 +107,8 @@ class ToolRoutingConfig(BaseModel):
 
 
 class MemoryConfig(BaseModel):
-    db_path: str = "data/memory.sqlite3"
+    # Storage is chosen by the environment: DATABASE_URL (Postgres, e.g. Railway) or else
+    # SQLite at IRIIS_SQLITE_PATH (default data/iriis.sqlite3). See iriis/storage.py.
     enabled: bool = True
 
 

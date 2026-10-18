@@ -19,3 +19,4 @@ faster-whisper==1.2.1
 ctranslate2==4.8.3
 kokoro-onnx==0.6.1
 piper-tts==1.8.0
+psycopg[binary]==3.3.6

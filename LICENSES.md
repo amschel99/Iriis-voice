@@ -40,6 +40,7 @@ Iriis' own code: MIT.
 | kokoro-onnx | 0.6.1 | MIT | Kokoro TTS runtime |
 | espeakng-loader (via kokoro-onnx) | — | GPL-3.0 (espeak-ng) | Phonemes |
 | piper-tts | 1.8.0 | **GPL-3.0-or-later** | Fallback TTS |
+| psycopg[binary] | 3.3.6 | LGPL-3.0 (bundled libpq: PostgreSQL licence) | Postgres storage (Railway) |
 | sounddevice | 0.5.6 | MIT (PortAudio: MIT-style) | Mic/speaker (desktop only) |
 | openwakeword | 0.6.0 | Apache-2.0 (code) | Wake word (desktop only) |
 | pynput | 1.8.2 | LGPL-3.0 | Push-to-talk key (desktop only) |

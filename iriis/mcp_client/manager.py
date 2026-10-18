@@ -46,7 +46,10 @@ class MCPManager:
     # ------------------------------------------------------------------ lifecycle
 
     def _base_env(self) -> dict[str, str]:
-        return {
+        import os
+        # The SDK starts servers with a minimal environment, so storage settings are passed explicitly.
+        storage = {k: os.environ[k] for k in ("DATABASE_URL", "IRIIS_SQLITE_PATH") if os.environ.get(k)}
+        return {**storage,
             "IRIIS_ALLOWED_DIRS": json.dumps(self.config.files.allowed_dirs),
             "IRIIS_DATA_DIR": str(resolve_path("data")),
             "IRIIS_TIMEZONE": self.config.timezone,

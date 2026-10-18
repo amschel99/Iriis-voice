@@ -1,11 +1,11 @@
-"""memory MCP server: long-term facts the user explicitly asks to remember."""
+"""memory MCP server: long-term facts the user explicitly asks to remember (Postgres or SQLite)."""
 from __future__ import annotations
 
-from servers._common import data_dir, make_server
+from servers._common import make_server
 from iriis.agent.longterm import LongTermMemory
 
 mcp = make_server("memory")
-store = LongTermMemory(data_dir() / "memory.sqlite3")
+store = LongTermMemory()  # Postgres if DATABASE_URL is set, else data/iriis.sqlite3
 
 
 @mcp.tool()

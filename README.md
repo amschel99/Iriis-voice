@@ -98,7 +98,10 @@ terminal to ask in. For `--confirm local`, run `python -m iriis.desktop --confir
    - **No GitHub?** Install the Railway CLI and run `railway up` in this folder instead.
 3. **Variables:** set `DEEPSEEK_API_KEY`, `IRIIS_API_KEY` and `IRIIS_DESKTOP_TOKEN`.
    To use Groq instead (faster first word), see the comment under `llm:` in config/config.yaml.
-4. **Volume:** add one mounted at `/app/data`, so memories, notes and reminders survive redeploys.
+4. **Database:** in the project, click **+ New → Database → PostgreSQL**. Then on the Iriis service, add the variable
+   `DATABASE_URL` = `${{Postgres.DATABASE_URL}}` (a Railway reference variable). Her memories, notes, reminders and
+   the cloud audit log live there, so they survive redeploys. No volume is needed. The tables are created on first start.
+   Without `DATABASE_URL` (locally, or in offline mode) she uses SQLite at `data/iriis.sqlite3`.
 5. **Networking:** click **Generate Domain**. You'll get something like `https://iriis-production.up.railway.app`.
 6. **Size:** give the service at least **2 GB RAM** (small.en about 0.35 GB, AfriSpeech medium about 1 GB, Kokoro about 0.3 GB).
    More vCPUs means faster speech recognition.

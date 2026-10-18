@@ -52,7 +52,7 @@ class Iriis:
         self.ui = ConsoleUI(cfg.ui.show_latency)
         self.llm = make_llm(cfg)
         self.mcp = MCPManager(cfg) if use_tools else None
-        self.memory = LongTermMemory(resolve_path(cfg.memory.db_path)) if cfg.memory.enabled else None
+        self.memory = LongTermMemory() if cfg.memory.enabled else None
         self.agent: Agent | None = None
         self.background: list[asyncio.Task] = []
 
@@ -82,7 +82,7 @@ class Iriis:
         return problems
 
     def start_reminders(self, announce) -> None:
-        watcher = ReminderWatcher(resolve_path("data/notes.sqlite3"), announce)
+        watcher = ReminderWatcher(announce)
         self.background.append(asyncio.create_task(watcher.run(), name="reminders"))
 
     async def stop(self) -> None:

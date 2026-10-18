@@ -141,10 +141,12 @@ def redact_secrets(text: str) -> str:
 # ---------------------------------------------------------------- audit log
 
 class AuditLog:
-    def __init__(self, path: str):
+    def __init__(self, path: str, db=None, source: str = "local"):
         self.path = resolve_path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
+        self.db = db          # optional iriis.storage.DB: entries are also written to its audit_log table
+        self.source = source
 
     def record(self, *, tool: str, args: dict[str, Any], tier: Tier, confirmed: bool | None,
                executed: bool, result: str = "", error: str = "", dry_run: bool = False,
@@ -161,8 +163,15 @@ class AuditLog:
             "error": error[:300],
             "duration_ms": round(duration_ms, 1) if duration_ms is not None else None,
         }
+        line = json.dumps(entry, ensure_ascii=False)
         with self._lock, self.path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            f.write(line + "\n")
+        if self.db is not None:
+            try:
+                self.db.execute("INSERT INTO audit_log (ts, source, tool, tier, executed, entry) VALUES (?, ?, ?, ?, ?, ?)",
+                                (entry["ts"], self.source, tool, tier, int(executed), line))
+            except Exception:  # noqa: BLE001  (the JSONL file still has it)
+                pass
 
 
 def is_affirmative(utterance: str, confirm_words: list[str]) -> bool:

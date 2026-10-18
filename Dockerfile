@@ -33,6 +33,7 @@ COPY servers ./servers
 COPY config ./config
 RUN mkdir -p data logs
 ENV IRIIS__STT__BACKEND=faster_whisper IRIIS__STT__MODEL=models/stt/faster-whisper-small.en
-# data/ holds memory + notes (SQLite): mount a Railway volume at /app/data to keep them across deploys.
+# Storage: set DATABASE_URL (Railway Postgres) to persist memories, notes, reminders and the audit log.
+# Without it the container falls back to SQLite in data/, which is lost on redeploy.
 EXPOSE 8000
 CMD ["python", "-m", "iriis.server"]

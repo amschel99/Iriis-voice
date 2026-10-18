@@ -22,13 +22,14 @@ from pydantic import BaseModel, Field
 
 from iriis.agent.loop import Agent
 from iriis.agent.longterm import LongTermMemory
-from iriis.agent.permissions import PermissionManager
+from iriis.agent.permissions import AuditLog, PermissionManager
 from iriis.agent.reminders import ReminderWatcher
 from iriis.config import Config, apply_offline_env, load_config, resolve_path
 from iriis.mcp_client.manager import MCPManager
 from iriis.server.desktop_bridge import CompositeTools, DesktopBridge
 from iriis.server.sessions import Session, SessionStore, run_turn
 from iriis.server.speech import Speech, decode_audio_file, from_pcm16, wav_bytes
+from iriis.storage import get_db
 
 log = logging.getLogger("iriis.server")
 STATIC = Path(__file__).parent / "static"
@@ -46,8 +47,11 @@ class Core:
         self.permissions = PermissionManager(cfg, [])
         self.desktop = DesktopBridge(self.permissions)
         self.tools = CompositeTools(self.mcp, self.desktop)
-        self.memory = LongTermMemory(resolve_path(cfg.memory.db_path)) if cfg.memory.enabled else None
+        self.db = get_db()
+        self.memory = LongTermMemory(self.db) if cfg.memory.enabled else None
         self.speech = Speech(cfg)
+        # Audit trail: JSONL file + the database (so it survives redeploys on Railway).
+        self.audit = AuditLog(cfg.permissions.audit_log, db=self.db, source="cloud")
         self.sessions = SessionStore(self._make_agent, cfg.server.max_sessions)
         self.voice_sockets: set[WebSocket] = set()
         self.problems: list[str] = []
@@ -55,7 +59,9 @@ class Core:
 
     def _make_agent(self) -> Agent:
         facts = (lambda: [t for _, t in self.memory.all()]) if self.memory else None
-        return Agent(self.cfg, self.llm, self.tools, self.permissions, facts)
+        agent = Agent(self.cfg, self.llm, self.tools, self.permissions, facts)
+        agent.audit = self.audit
+        return agent
 
     async def start(self) -> None:
         ok, msg = await self.llm.health()
@@ -65,6 +71,10 @@ class Core:
         self.problems += await self.mcp.start()
         self.permissions.add_servers(self.mcp.server_configs)
         self.problems += await self.speech.preload()
+        if self.db.dialect == "sqlite" and os.environ.get("RAILWAY_ENVIRONMENT"):
+            self.problems.append("No DATABASE_URL: memories, notes and reminders are in SQLite and will be lost on redeploy. "
+                                 "Add Railway Postgres and set DATABASE_URL=${{Postgres.DATABASE_URL}}.")
+        log.info("storage: %s", self.db.description)
         for p in self.problems:
             log.warning(p)
 
@@ -162,6 +172,7 @@ def status_dict(core: Core) -> dict[str, Any]:
         "llm": {"backend": core.cfg.llm.backend, "model": core.llm.model},
         "stt": core.speech.stt_name,
         "tts": core.speech.tts_name,
+        "storage": core.db.description,
         "desktop_connected": core.desktop.online,
         "cloud_servers": core.mcp.status(),
         "tools": sum(len(s["tools"]) for s in core.tools.servers_catalog().values()),
@@ -230,7 +241,7 @@ def create_app(cfg: Config | None = None) -> FastAPI:
         core_ref["core"] = core
         app.state.core = core
         await core.start()
-        reminders = asyncio.create_task(ReminderWatcher(resolve_path("data/notes.sqlite3"), core.announce).run())
+        reminders = asyncio.create_task(ReminderWatcher(core.announce, core.db).run())
         async with mcp.session_manager.run():
             yield
         reminders.cancel()
