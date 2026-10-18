@@ -1,0 +1,111 @@
+# Iriis configuration. Every key is optional; defaults live in iriis/config.py.
+# Paths are relative to the project root unless absolute; ~ is expanded.
+
+assistant_name: Iriis
+user_name: ""                  # how Iriis refers to you
+location: Nairobi, Kenya
+timezone: Africa/Nairobi
+
+audio:
+  input_device: null           # index or name substring; see `python -m iriis --list-devices`
+  output_device: null
+  sample_rate: 16000           # input pipeline rate (wake word, VAD and STT all use 16 kHz)
+  block_ms: 80                 # mic block size; 80 ms = 1280 samples, what openWakeWord wants
+  chime: true                  # short tone when Iriis starts listening
+
+wakeword:
+  mode: wakeword               # wakeword | push_to_talk | always (no trigger; VAD only)
+  model: hey_jarvis            # openWakeWord pretrained model name, or a path to a custom .onnx
+  threshold: 0.5               # raise (0.6-0.7) if it triggers by itself; lower if it misses you
+  push_to_talk_key: f9         # used when mode is push_to_talk (hold to talk, release to send)
+
+vad:                           # Silero VAD endpointing
+  threshold: 0.5
+  silence_ms: 700              # this much silence ends your turn
+  min_speech_ms: 250           # shorter blips are ignored
+  max_utterance_s: 20
+  no_speech_timeout_s: 6       # after the wake word, give up if you say nothing
+
+stt:
+  backend: faster_whisper      # faster_whisper | parakeet  (pick using scripts/benchmark_stt.py)
+  # Default until YOUR benchmark says otherwise. Synthetic test (TTS voices, not a Kenyan accent):
+  # small.en 10% WER; AfriSpeech medium 56% with a clinical bias. Decide with record_benchmark.py + benchmark_stt.py
+  model: models/stt/faster-whisper-small.en         # or models/stt/afrispeech-whisper-medium-ct2
+  parakeet_dir: models/stt/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8
+  device: auto                 # auto | cpu | cuda
+  compute_type: auto           # auto = int8 on CPU, float16 on GPU
+  beam_size: 1                 # 1 is fastest; 5 is slightly more accurate
+  cpu_threads: 0               # 0 = let CTranslate2 decide
+  use_vocabulary_prompt: false # true = pass `vocabulary` to Whisper as a prompt. Measure first: it HURTS the
+                               # AfriSpeech fine-tunes (they were never trained with prompts)
+  vocabulary:                  # proper nouns (Parakeet hotwords; Whisper prompt if enabled above)
+    - Nairobi
+    - Westlands
+    - Kilimani
+    - Thika Road
+    - M-Pesa
+    - Safaricom
+    - matatu
+
+llm:
+  backend: openai              # openai = any OpenAI-compatible API | ollama (offline) | llamacpp
+  base_url: https://api.deepseek.com
+  api_key_env: DEEPSEEK_API_KEY  # the key itself lives in the environment, never in this file
+  model: deepseek-flash        # DeepSeek V4.1 Flash: tool calling, cheap with prompt caching
+  fallback_model: ""           # same-provider model to retry with on rate limits / outages (e.g. deepseek-v4-pro)
+  reasoning_effort: low        # only sent to gpt-oss models
+  # Faster first word (voice): Groq. base_url https://api.groq.com/openai/v1, api_key_env GROQ_API_KEY,
+  #   model openai/gpt-oss-120b, fallback_model openai/gpt-oss-20b
+  temperature: 0.4
+  max_tokens: 1024
+  max_tool_iterations: 6
+  history_max_tokens: 5000
+  request_timeout_s: 60
+  # Local / offline mode (python -m iriis --offline): Ollama on this machine.
+  host: http://127.0.0.1:11434 # must be localhost
+  offline_model: qwen3:4b-instruct-2507-q4_K_M
+  use_fallback_below_free_gb: 7.0
+  num_ctx: 8192
+  keep_alive: 30m              # keep the model loaded between requests
+  think: false                 # qwen3 "thinking" adds seconds of latency; off for voice
+
+tts:
+  backend: kokoro              # kokoro | piper
+  kokoro_model: models/tts/kokoro-v1.0.int8.onnx
+  kokoro_voices: models/tts/voices-v1.0.bin
+  voice: af_heart              # Iriis is female: af_heart (best), af_bella, af_nicole, bf_emma, bf_isabella, bf_lily
+  piper_model: models/tts/en_GB-alba-medium.onnx
+  speed: 1.0
+  volume: 1.0
+
+barge_in:
+  enabled: true
+  min_speech_ms: 300           # you must talk this long to interrupt
+  echo_gate_ratio: 1.5         # mic energy must beat what Iriis is playing x this (lower with headphones)
+  stop_words: ["stop", "cancel", "never mind", "nevermind", "shut up", "quiet"]
+
+permissions:
+  default_tier: confirm        # any tool not configured elsewhere
+  overrides: {}                # e.g. {"files__delete_file": blocked, "shell__*": confirm}
+  dry_run: false               # log tool calls without executing them
+  audit_log: logs/audit.jsonl
+  confirm_words: ["yes", "yeah", "yep", "confirm", "confirmed", "do it", "go ahead", "sure", "okay", "ok", "proceed"]   # quoted: YAML reads bare yes as true
+
+tool_routing:
+  max_tools: 20                # above this, only tools of relevant servers are offered per turn
+  method: keyword              # keyword (instant) | llm (one extra LLM call)
+
+memory:
+  enabled: true
+  db_path: data/memory.sqlite3
+
+files:
+  allowed_dirs:                # the files server can only see inside these
+    - ~/Documents
+    - ~/Desktop
+    - ~/Downloads
+
+ui:
+  show_latency: true
+
+mcp_config: config/mcp_servers.yaml

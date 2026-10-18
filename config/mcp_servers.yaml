@@ -1,0 +1,155 @@
+# MCP servers Iriis connects to. Shape follows the common `mcpServers` format, plus:
+#   enabled        start this server?
+#   transport      stdio (default; launches `command args`) or http (streamable HTTP, url: ...)
+#   tier           default permission tier for this server's tools: auto | confirm | blocked
+#   tools          per-tool tier overrides (globs allowed), e.g. {write_*: confirm}
+#   description    one line, used by the tool router to pick servers when there are many tools
+#   keywords       extra words that route a request to this server
+#   needs_internet document that this server can't work offline (it is allowed to be down)
+#
+# `command: python` runs inside Iriis' own virtualenv. Tool names reach the LLM as server__tool.
+# Any tool not covered here gets permissions.default_tier from config.yaml (confirm).
+
+mcpServers:
+  time_and_calc:
+    command: python
+    args: ["-m", "servers.time_and_calc"]
+    tier: auto
+    description: Current time and date, timezones, date differences, maths, unit conversion.
+    keywords: [time, date, day, clock, calculate, plus, minus, times, divided, percent, convert, units, timezone]
+
+  system_info:
+    command: python
+    args: ["-m", "servers.system_info"]
+    tier: auto
+    description: This computer's CPU, memory, disk space, battery, uptime, running processes and network.
+    keywords: [computer, laptop, pc, cpu, ram, memory, disk, storage, space, battery, process, running, network, wifi, internet, uptime, slow]
+
+  files:
+    command: python
+    args: ["-m", "servers.files"]
+    tier: auto            # reading and searching inside allowlisted folders
+    tools:
+      write_text_file: confirm
+      move_file: confirm
+      delete_file: confirm
+      open_file: auto
+    description: Search, list, read and open files in the allowed folders; write, move or delete files with confirmation.
+    keywords: [file, files, folder, document, documents, downloads, desktop, pdf, find, search, open, read, save, write, move, rename, delete]
+
+  shell:
+    command: python
+    args: ["-m", "servers.shell"]
+    tier: confirm         # the shell classifier relaxes allowlisted read-only commands to auto
+    description: Run terminal commands (read-only commands run directly, others need confirmation).
+    keywords: [command, terminal, shell, run, git, ping, powershell, cmd, directory]
+
+  apps_and_media:
+    command: python
+    args: ["-m", "servers.apps_and_media"]
+    tier: auto
+    tools:
+      close_app: confirm
+      lock_screen: confirm
+      open_url: confirm
+      power: confirm
+    description: Open or close applications, volume, media playback, screenshots, lock screen, open websites.
+    keywords: [open, launch, start, close, quit, app, application, volume, louder, quieter, mute, music, play, pause, next, previous, song, screenshot, lock, browser, website]
+
+  notes_reminders:
+    command: python
+    args: ["-m", "servers.notes_reminders"]
+    tier: auto
+    tools:
+      delete_note: confirm
+    description: Notes, reminders and countdown timers stored locally.
+    keywords: [note, notes, write down, jot, remind, reminder, reminders, timer, alarm, minutes, schedule]
+
+  clipboard:
+    command: python
+    args: ["-m", "servers.clipboard"]
+    tier: auto
+    tools:
+      write_clipboard: confirm
+    description: Read or set the clipboard text.
+    keywords: [clipboard, copy, copied, paste]
+
+  memory:
+    command: python
+    args: ["-m", "servers.memory"]
+    tier: auto
+    description: Long-term facts the user asked to remember; save, recall or forget them.
+    keywords: [remember, recall, forget, memory, my]
+
+  # ------------------------------------------------------------------------------------------
+  # Optional third-party servers (disabled). Install their runtimes first; see README §MCP.
+
+  fs_reference:          # reference filesystem server (Node.js). Needs `npx`.
+    enabled: false
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "C:/Users/you/Documents"]
+    tier: confirm
+    tools: {read_*: auto, list_*: auto, search_*: auto, get_*: auto}
+    description: Reference filesystem server.
+
+  git:                   # reference git server (Python): pip install mcp-server-git
+    enabled: false
+    command: python
+    args: ["-m", "mcp_server_git", "--repository", "C:/path/to/repo"]
+    tier: confirm
+    tools: {git_status: auto, git_log: auto, git_diff*: auto, git_show: auto}
+    description: Git repository status, history and diffs.
+    keywords: [git, commit, branch, repo, repository, diff]
+
+  browser:               # Playwright MCP server (Node.js). NEEDS INTERNET for real pages.
+    enabled: false
+    needs_internet: true
+    command: npx
+    args: ["-y", "@playwright/mcp@latest", "--headless"]
+    tier: confirm
+    tools: {browser_snapshot: auto, browser_take_screenshot: auto}
+    description: Browse and read web pages.
+    keywords: [web, website, page, browse, browser, site, check]
+
+  # Unofficial messaging/social bridges: NEED INTERNET, may break, and risk account bans.
+  # Read-mostly; every send/post tool stays at confirm. Their credentials live in their own env.
+  whatsapp:              # e.g. a WAHA (whatsapp-web.js / Baileys) MCP bridge on localhost
+    enabled: false
+    needs_internet: true
+    transport: http
+    url: http://127.0.0.1:3010/mcp
+    tier: confirm
+    tools: {list_*: auto, get_*: auto, read_*: auto, search_*: auto}
+    description: Read and (with confirmation) send WhatsApp messages.
+    keywords: [whatsapp, message, messages, chat, text, send]
+
+  x_twitter:             # e.g. an MCP server wrapping twikit
+    enabled: false
+    needs_internet: true
+    command: python
+    args: ["-m", "my_x_mcp_server"]
+    env: {X_COOKIES_FILE: "C:/Users/you/.config/x/cookies.json"}
+    tier: confirm
+    tools: {get_*: auto, search_*: auto, read_*: auto}
+    description: Read X/Twitter timeline and (with confirmation) post.
+    keywords: [twitter, tweet, x, timeline, post]
+
+  instagram:             # e.g. an MCP server wrapping instagrapi
+    enabled: false
+    needs_internet: true
+    command: python
+    args: ["-m", "my_instagram_mcp_server"]
+    tier: confirm
+    tools: {get_*: auto, list_*: auto}
+    description: Read Instagram DMs and feed; posting needs confirmation.
+    keywords: [instagram, insta, dm]
+
+  linkedin:              # e.g. an MCP server wrapping linkedin-api
+    enabled: false
+    needs_internet: true
+    command: python
+    args: ["-m", "my_linkedin_mcp_server"]
+    tier: confirm
+    tools: {get_*: auto, search_*: auto}
+    description: Read LinkedIn messages and profiles; sending needs confirmation.
+    keywords: [linkedin]

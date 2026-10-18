@@ -1,0 +1,10 @@
+# Railway: https://docs.railway.com/reference/config-as-code
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 300        # first boot loads the STT + TTS models
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5

@@ -1,0 +1,12 @@
+.venv
+.venv-convert
+models
+data
+logs
+benchmarks
+tests
+**/__pycache__
+*.pyc
+.env
+.env.*
+.git

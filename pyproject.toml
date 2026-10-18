@@ -1,0 +1,30 @@
+[project]
+name = "iriis-voice"
+version = "0.2.0"
+description = "Personal voice assistant: cloud core (Railway) + desktop agent, MCP tools, accent-tuned STT, offline fallback"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+readme = "README.md"
+dynamic = ["dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements-server.txt"] }
+
+[tool.setuptools.packages.find]
+include = ["iriis*", "servers*"]
+
+[tool.setuptools.package-data]
+iriis = ["server/static/*"]
+
+[project.scripts]
+iriis = "iriis.__main__:main"
+iriis-server = "iriis.server.__main__:main"
+iriis-desktop = "iriis.desktop.__main__:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"

@@ -1,0 +1,12 @@
+.venv/
+.venv-convert/
+models/
+data/
+logs/
+benchmarks/
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+.pytest_cache/

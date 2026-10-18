@@ -1,0 +1,7 @@
+# One-off conversion environment (NOT needed at runtime). CPU-only torch keeps it small.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.14.1
+transformers==4.57.3
+ctranslate2==4.8.3
+huggingface_hub==0.36.0
+safetensors==0.6.2
