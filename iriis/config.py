@@ -136,9 +136,10 @@ class TTSConfig(BaseModel):
 
 class BargeInConfig(BaseModel):
     enabled: bool = True
-    min_speech_ms: int = 300
-    # Mic energy must exceed playback energy * this ratio to count as the user (echo gate).
-    echo_gate_ratio: float = 1.5
+    min_speech_ms: int = 500
+    # Mic energy must exceed (recent) playback energy * this ratio to count as the user (echo gate).
+    # Laptop speakers + built-in mic need ~2.5; with headphones you can drop it to 1.2.
+    echo_gate_ratio: float = 2.5
     stop_words: list[str] = Field(default_factory=lambda: ["stop", "cancel", "never mind", "nevermind", "shut up", "quiet"])
 
 

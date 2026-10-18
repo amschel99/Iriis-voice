@@ -28,6 +28,7 @@ NOT_CONNECTED_REPLY = "Sorry, I'm not connected to my brain right now, so I can'
 class RemoteVoiceClient:
     def __init__(self, cfg: Config, ui: ConsoleUI, player: Player | None = None, local_voice=None):
         self.cfg, self.ui = cfg, ui
+        self._owns_player = player is None
         self.player = player or Player(cfg.audio.output_device, OUT_SR)
         self.local_voice = local_voice
         self.vad = SileroVAD()
@@ -66,8 +67,27 @@ class RemoteVoiceClient:
                     q.get_nowait()
             return
         self.wake.reset()
-        while not self.wake.feed(await q.get()):
-            pass
+        from iriis.desktop.agent import write_status
+        window_start, loudest, best = time.monotonic(), 0.0, 0.0
+        while True:
+            block = await q.get()
+            fired = self.wake.feed(block)
+            loudest = max(loudest, float(np.sqrt(np.mean(block ** 2))))
+            best = max(best, float(self.wake.last_score))
+            if fired:
+                self.ui.info(f"wake word heard (score {self.wake.last_score:.2f})")
+                break
+            if time.monotonic() - window_start >= 5:
+                # Diagnostics: what she hears, visible in `iriis status` and the log.
+                try:
+                    write_status(mic_level=round(float(loudest), 4), wake_score=round(float(best), 3),
+                                 wake_threshold=float(self.wake.threshold), mic_checked=time.time())
+                except Exception:  # noqa: BLE001  (diagnostics must never stop her listening)
+                    pass
+                if loudest > 0.01:
+                    self.ui.info(f"hearing sound: level {loudest:.3f}, best 'Hey Jarvis' score {best:.2f}"
+                                 f" (fires at {self.wake.threshold:.2f})")
+                window_start, loudest, best = time.monotonic(), 0.0, 0.0
         if self.cfg.audio.chime:
             self.player.play(chime(OUT_SR), OUT_SR)
 
@@ -102,8 +122,14 @@ class RemoteVoiceClient:
         while True:
             block = await q.get()
             recent = (recent + [block])[-8:]
+            if not self.player.busy:
+                # Only talking OVER her counts as an interruption. While she's still thinking, extra
+                # speech (you repeating yourself, a TV, people nearby) must not cancel your request.
+                run = 0
+                continue
             rms = float(np.sqrt(np.mean(block ** 2)))
-            gated = self.player.level > 0 and rms < self.player.level * self.cfg.barge_in.echo_gate_ratio
+            echo = self.player.echo_level
+            gated = echo > 0 and rms < echo * self.cfg.barge_in.echo_gate_ratio
             for p in vad.process(block):
                 run = run + 1 if (p >= self.cfg.vad.threshold and not gated) else max(0, run - 1)
             if run >= need:
@@ -215,7 +241,8 @@ class RemoteVoiceClient:
             link.cancel()
             pump.cancel()
             await self.mic.stop()
-            self.player.close()
+            if self._owns_player:      # a shared speaker outlives a restart of the voice client
+                self.player.close()
 
     async def _keep_connected(self) -> None:
         """Hold the voice WebSocket open, reconnecting forever. self.ws is None while down."""

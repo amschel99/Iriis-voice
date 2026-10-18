@@ -230,6 +230,10 @@ def _print_status(args) -> tuple[bool, str]:
         if "voice_connected" in st:
             v = st["voice_connected"]
             print(f"  Voice         : {GREEN + 'connected' if v else RED + 'not connected'}{RESET}")
+        if "mic_level" in st:
+            lvl, score, thr = st["mic_level"], st.get("wake_score", 0), st.get("wake_threshold", 0.5)
+            heard = f"{GREEN}hearing sound{RESET}" if lvl > 0.01 else f"{RED}silent{RESET} (muted or wrong mic? try `iriis mic --list`)"
+            print(f"  Microphone    : {heard}  level {lvl:.3f}, best 'Hey Jarvis' score {score:.2f} (fires at {thr:.2f})")
     # What she says about it:
     if ok and linked:
         line = "I'm connected to my brain and ready."

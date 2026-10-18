@@ -290,3 +290,10 @@ def test_speech_stream_falls_back_to_kokoro_when_gpu_is_cold(monkeypatch):
         return [a async for a in speech.stream("<laugh> Hello there.")]
     chunks = asyncio.run(collect())
     assert len(chunks) == 1 and len(chunks[0][0]) == 30      # whole sentence from Kokoro, no silence
+
+
+def test_loose_sound_tags_are_understood_and_hidden():
+    t = "{chuckle} Right. (laughs) Fine."
+    assert strip_directions(t) == "Right. Fine."
+    assert normalize(t, style="open") == "<chuckle> Right. <laugh> Fine."
+    assert "chuckle" not in normalize(t) and "laugh" not in normalize(t)

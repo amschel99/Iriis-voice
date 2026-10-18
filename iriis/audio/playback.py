@@ -43,7 +43,8 @@ class Player:
         self._stop_now = threading.Event()
         self._idle = threading.Event()
         self._idle.set()
-        self.level = 0.0                  # RMS of what is being played right now (echo gate)
+        self.level = 0.0                  # RMS of what is being played right now
+        self._recent_levels: list[tuple[float, float]] = []   # (time, rms) of the last ~0.6 s played
         self.last_audio_end = 0.0         # time.monotonic() when the speaker last went quiet
         self._thread = threading.Thread(target=self._run, name="player", daemon=True)
         self._thread.start()
@@ -51,6 +52,13 @@ class Player:
     def play(self, audio: np.ndarray, sr: int) -> None:
         self._idle.clear()
         self.q.put(resample(audio.astype(np.float32), sr, self.sample_rate))
+
+    @property
+    def echo_level(self) -> float:
+        """Loudest output in the last ~0.6 s. The mic hears the room's echo slightly late, and streamed
+        speech arrives in small chunks with tiny gaps, so the instantaneous level is not enough."""
+        now = time.monotonic()
+        return max((l for t, l in self._recent_levels if now - t < 0.6), default=0.0)
 
     @property
     def busy(self) -> bool:
@@ -92,6 +100,8 @@ class Player:
                         break
                     chunk = clip[i:i + block]
                     self.level = float(np.sqrt(np.mean(chunk ** 2))) if len(chunk) else 0.0
+                    now = time.monotonic()
+                    self._recent_levels = [(t, l) for t, l in self._recent_levels if now - t < 0.6] + [(now, self.level)]
                     out.write(chunk.reshape(-1, 1))
                 self.level = 0.0
 

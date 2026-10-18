@@ -16,7 +16,7 @@ audio:
 wakeword:
   mode: wakeword               # wakeword | push_to_talk | always (no trigger; VAD only)
   model: hey_jarvis            # openWakeWord pretrained model name, or a path to a custom .onnx
-  threshold: 0.5               # raise (0.6-0.7) if it triggers by itself; lower if it misses you
+  threshold: 0.45              # raise (0.6-0.7) if it triggers by itself; lower if it misses you
   push_to_talk_key: f9         # used when mode is push_to_talk (hold to talk, release to send)
 
 vad:                           # Silero VAD endpointing
@@ -105,8 +105,8 @@ tts:
 
 barge_in:
   enabled: true
-  min_speech_ms: 300           # you must talk this long to interrupt
-  echo_gate_ratio: 1.5         # mic energy must beat what Iriis is playing x this (lower with headphones)
+  min_speech_ms: 500           # you must talk over her this long to interrupt
+  echo_gate_ratio: 2.5         # mic must be this much louder than her own voice (1.2 with headphones)
   stop_words: ["stop", "cancel", "never mind", "nevermind", "shut up", "quiet"]
 
 permissions:

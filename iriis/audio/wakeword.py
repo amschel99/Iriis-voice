@@ -32,7 +32,7 @@ class WakeWord:
         """block: float32 16 kHz, ideally 1280 samples (80 ms). True when the wake word fires."""
         pcm = (np.clip(block, -1, 1) * 32767).astype(np.int16)
         scores = self.model.predict(pcm)
-        self.last_score = max(scores.values()) if scores else 0.0
+        self.last_score = float(max(scores.values())) if scores else 0.0
         return self.last_score >= self.threshold
 
     def reset(self) -> None:

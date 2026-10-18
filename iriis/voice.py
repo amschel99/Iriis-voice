@@ -199,7 +199,7 @@ class VoiceLoop:
             block = await q.get()
             recent = (recent + [block])[-8:]
             mic_rms = float(np.sqrt(np.mean(block ** 2)))
-            playing = self.speaker.player.level
+            playing = self.speaker.player.echo_level
             # Echo gate: while Iriis is audible, the mic must be clearly louder than the playback.
             gated = playing > 0 and mic_rms < playing * self.cfg.barge_in.echo_gate_ratio
             for p in vad.process(block):

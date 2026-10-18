@@ -52,7 +52,20 @@ async def _main(args) -> None:
     tasks = [asyncio.create_task(agent.run(), name="desktop-link")]
     if args.voice:
         from iriis.desktop.voice_client import RemoteVoiceClient
-        tasks.append(asyncio.create_task(RemoteVoiceClient(cfg, ui, player, local_voice).run(), name="voice"))
+
+        async def voice_forever():
+            """A crash in the voice part restarts it instead of taking the desktop tools down too."""
+            while True:
+                try:
+                    await RemoteVoiceClient(cfg, ui, player, local_voice).run()
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:  # noqa: BLE001
+                    import traceback
+                    ui.error(f"voice crashed, restarting in 3 s: {e}")
+                    traceback.print_exc()
+                    await asyncio.sleep(3)
+        tasks.append(asyncio.create_task(voice_forever(), name="voice"))
     try:
         await asyncio.gather(*tasks)
     finally:

@@ -183,6 +183,12 @@ for _g, _o in list(_EQUIV.items())[:6]:
 
 SOUND_TAGS = ("laugh", "chuckle", "sigh", "cough", "sniffle", "groan", "yawn", "gasp")
 SOUND_TAG_RE = re.compile(r"<\s*(" + "|".join(SOUND_TAGS) + r")\s*>", re.I)
+# The model sometimes writes {chuckle} or (laughs) instead of <chuckle>; accept those too.
+_LOOSE_SOUND_RE = re.compile(r"[{(]\s*(" + "|".join(SOUND_TAGS) + r")(?:s|ing)?\s*[})]", re.I)
+
+
+def canonical_sounds(text: str) -> str:
+    return _LOOSE_SOUND_RE.sub(lambda m: f"<{m.group(1).lower()}>", text)
 VOICE_TAG_RE = re.compile(r"\{\s*(" + "|".join(GROQ_VOICES + OPEN_VOICES) + r")\s*\}", re.I)
 
 _DIRECTION_TO_SOUND = [  # first match wins
@@ -211,7 +217,7 @@ def take_voice(text: str) -> tuple[str | None, str]:
 
 def strip_directions(text: str) -> str:
     """Remove [directions], {voice} tags and <sound> tags (for display and calm voices)."""
-    text = SOUND_TAG_RE.sub("", DIRECTION_RE.sub("", VOICE_TAG_RE.sub("", text)))
+    text = SOUND_TAG_RE.sub("", DIRECTION_RE.sub("", VOICE_TAG_RE.sub("", canonical_sounds(text))))
     return re.sub(r"\s{2,}", " ", text).strip()
 
 
@@ -256,7 +262,7 @@ def normalize(text: str, currency: str = "shillings", keep_directions: bool = Fa
     style "open"  (self-hosted Orpheus 0.1): keep <sounds>; [laughing]-like directions become sounds; others dropped.
     keep_directions=True is the old spelling of style="groq"."""
     style = style or ("groq" if keep_directions else "plain")
-    text = VOICE_TAG_RE.sub(" ", text)       # voices are chosen by the caller, never read out
+    text = VOICE_TAG_RE.sub(" ", canonical_sounds(text))   # voices are chosen by the caller, never read out
     if style == "groq":
         if is_shouting(text) and not DIRECTION_RE.search(text):
             text = "[shouting] " + text
