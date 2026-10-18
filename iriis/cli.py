@@ -314,7 +314,7 @@ def _speak(text: str, online: bool = True) -> None:
     from iriis.tts.text_normalize import normalize
     import sounddevice as sd
     cfg = load_config()
-    for backend in (cfg.tts.backend, "piper"):
+    for backend in ("kokoro", "piper"):   # on-device voices only (offline)
         try:
             tts = make_tts(cfg.tts, backend)
             for piece in pieces:

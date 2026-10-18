@@ -70,7 +70,9 @@ llm:
   think: false                 # qwen3 "thinking" adds seconds of latency; off for voice
 
 tts:
-  backend: kokoro              # kokoro | piper
+  backend: orpheus             # orpheus (expressive, via Groq: needs GROQ_API_KEY) | kokoro | piper
+  orpheus_voice: hannah        # female: hannah, diana, autumn; male: troy, austin, daniel
+                               # if Groq fails she keeps talking with kokoro (on the server's CPU)
   kokoro_model: models/tts/kokoro-v1.0.int8.onnx
   kokoro_voices: models/tts/voices-v1.0.bin
   voice: af_heart              # Iriis is female: af_heart (best), af_bella, af_nicole, bf_emma, bf_isabella, bf_lily

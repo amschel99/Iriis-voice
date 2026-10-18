@@ -151,22 +151,64 @@ _CAPS_WORD = re.compile(r"\b[A-Z][A-Z']+\b")
 def calm_shouting(text: str) -> str:
     """'SIT THE FUCK DOWN' -> 'sit the fuck down' so TTS says words instead of spelling letters.
     Punctuation (! ?! ...) is kept, so the delivery still carries the emphasis."""
-    words = re.findall(r"[A-Za-z']+", text)
-    caps = _CAPS_WORD.findall(text)
-    shouty = len(words) > 0 and len(caps) / len(words) >= 0.4
+    def calm_sentence(sentence: str) -> str:
+        words = re.findall(r"[A-Za-z']+", sentence)
+        caps = _CAPS_WORD.findall(sentence)
+        shouty = len(words) > 0 and len(caps) / len(words) >= 0.4   # judged per sentence
 
-    def fix(m: re.Match) -> str:
-        w = m.group(0)
-        if w in ACRONYMS:
+        def fix(m: re.Match) -> str:
+            w = m.group(0)
+            if w in ACRONYMS:
+                return w
+            if len(w) >= 3 or shouty:
+                return w.lower() if w != "I" else w
             return w
-        if len(w) >= 3 or shouty:
-            return w.lower() if w != "I" else w
-        return w
 
-    return _CAPS_WORD.sub(fix, text)
+        return _CAPS_WORD.sub(fix, sentence)
+
+    return "".join(calm_sentence(s) for s in re.split(r"(?<=[.!?])(?=\s)", text))
 
 
-def normalize(text: str, currency: str = "shillings") -> str:
+DIRECTION_RE = re.compile(r"\[([A-Za-z][A-Za-z ,'-]{0,38})\]")
+
+
+def strip_directions(text: str) -> str:
+    """Remove vocal directions like [angry] (for display and for voices that can't act)."""
+    return re.sub(r"\s{2,}", " ", DIRECTION_RE.sub("", text)).strip()
+
+
+def is_shouting(text: str) -> bool:
+    words = re.findall(r"[A-Za-z']+", DIRECTION_RE.sub("", text))
+    caps = [w for w in words if len(w) > 1 and w.isupper() and w not in ACRONYMS]
+    return len(words) >= 2 and len(caps) / len(words) >= 0.5
+
+
+def normalize(text: str, currency: str = "shillings", keep_directions: bool = False) -> str:
+    """keep_directions=True (expressive voices): keep [angry]-style directions, and turn an
+    all-caps sentence into a [shouting] one. Otherwise directions are removed."""
+    directions: list[str] = []
+    if keep_directions:
+        if is_shouting(text) and not DIRECTION_RE.search(text):
+            text = "[shouting] " + text
+
+        def stash(m: re.Match) -> str:
+            # letters only: digits would be turned into words by the number step
+            directions.append(m.group(0).lower())
+            return f" qqdir{_tag(len(directions) - 1)}qq "
+        text = DIRECTION_RE.sub(stash, text)
+    else:
+        text = DIRECTION_RE.sub(" ", text)
+    text = _normalize_plain(text, currency)
+    for i, d in enumerate(directions):
+        text = re.sub(rf"\s*qqdir{_tag(i)}qq\s*", f" {d} ", text, flags=re.I)
+    return re.sub(r"\s{2,}", " ", text).strip()
+
+
+def _tag(i: int) -> str:
+    return "".join(chr(ord("a") + int(c)) for c in str(i))   # 0 -> "a", 12 -> "bc"
+
+
+def _normalize_plain(text: str, currency: str = "shillings") -> str:
     text = strip_markdown(text)
     text, _ = extract_urls(text)
     for pat, repl in ABBREVIATIONS.items():

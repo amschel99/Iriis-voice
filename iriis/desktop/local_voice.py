@@ -24,7 +24,7 @@ class LocalVoice:
         with self._lock:
             if self._tts is None and not self.failed:
                 from iriis.tts import make_tts
-                for backend in (self.cfg.tts.backend, "piper"):
+                for backend in ("kokoro", "piper"):   # on-device only: it must work without the network
                     try:
                         self._tts = make_tts(self.cfg.tts, backend)
                         break

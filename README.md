@@ -90,6 +90,15 @@ were talking about whichever way you reach her, even after restarts and redeploy
 - **"Start over":** begins fresh context, but the old conversation stays searchable.
 - **Deleting for good:** `DELETE /v1/sessions/owner?purge=true` erases a conversation entirely.
 
+**Her voice can act.** With `GROQ_API_KEY` set on Railway, she speaks with **Orpheus** (voice "hannah"), an
+expressive model that really sounds angry, excited, sarcastic, loving or whispery.
+- **How she acts:** she adds vocal directions like `[angry]`, `[whisper]`, `[shouting]` or `[exasperated sigh]`
+  when emotion fits or you ask for it. They're never shown or read out.
+- **Shouting:** an all-caps rant is automatically delivered as a shout.
+- **Cost:** about $22 per million characters, roughly $0.003 for a typical reply.
+- **Fallback:** if Groq fails or isn't configured, she keeps talking with Kokoro (calm). Change the voice with
+  `tts.orpheus_voice` (female: hannah, diana, autumn).
+
 **Pasting long or multi-line text in Git Bash:** don't wrap it in `"…"`. Bash sends only the first line,
 and `!` inside double quotes triggers history expansion. Use a heredoc instead; everything between the markers
 is passed exactly:

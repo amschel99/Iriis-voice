@@ -41,7 +41,7 @@ class Speech:
         self._tts = None
         self._stt_lock = threading.Lock()
         self._tts_lock = threading.Lock()
-        self._voices: dict[str, object] = {}
+        self._fallback = None
 
     # ------------------------------------------------------------------ loading
 
@@ -57,11 +57,27 @@ class Speech:
         with self._tts_lock:
             if self._tts is None:
                 from iriis.tts import make_tts
-                try:
-                    self._tts = make_tts(self.cfg.tts)
-                except Exception:
-                    self._tts = make_tts(self.cfg.tts, "piper")
+                chain = [self.cfg.tts.backend] + [b for b in ("kokoro", "piper") if b != self.cfg.tts.backend]
+                errors = []
+                for backend in chain:
+                    try:
+                        self._tts = make_tts(self.cfg.tts, backend)
+                        break
+                    except Exception as e:  # noqa: BLE001
+                        errors.append(f"{backend}: {e}")
+                if self._tts is None:
+                    raise RuntimeError("; ".join(errors))
         return self._tts
+
+    def _offline_voice(self):
+        """Kokoro (or Piper) on the server's own CPU, used if the expressive voice fails mid-conversation."""
+        if self._fallback is None:
+            from iriis.tts import make_tts
+            try:
+                self._fallback = make_tts(self.cfg.tts, "kokoro")
+            except Exception:  # noqa: BLE001
+                self._fallback = make_tts(self.cfg.tts, "piper")
+        return self._fallback
 
     async def preload(self) -> list[str]:
         problems = []
@@ -97,11 +113,21 @@ class Speech:
 
     def _synthesize(self, text: str, voice: str | None) -> tuple[np.ndarray, int]:
         tts = self._load_tts()
+        if tts.name.startswith("orpheus"):
+            spoken = normalize(text, self.cfg.tts.currency, keep_directions=True)
+            if not spoken:
+                return np.zeros(0, dtype=np.float32), tts.sample_rate
+            try:
+                return tts.synthesize(spoken, voice=voice), tts.sample_rate
+            except Exception as e:  # noqa: BLE001  (Groq down / rate limited: keep talking with Kokoro)
+                import logging
+                logging.getLogger("iriis.speech").warning("expressive voice failed, using fallback: %s", e)
+                tts = self._offline_voice()
         spoken = normalize(text, self.cfg.tts.currency)
         if not spoken:
             return np.zeros(0, dtype=np.float32), tts.sample_rate
         with self._tts_lock:
-            if voice and hasattr(tts, "cfg") and voice != tts.cfg.voice:
+            if voice and hasattr(tts, "cfg") and voice != tts.cfg.voice and voice not in ("hannah", "diana", "autumn", "troy", "austin", "daniel"):
                 old = tts.cfg.voice
                 tts.cfg.voice = voice
                 try:

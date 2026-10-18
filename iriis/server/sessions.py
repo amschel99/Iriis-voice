@@ -11,6 +11,7 @@ from typing import Any, Awaitable, Callable
 
 from iriis.agent.loop import Agent, TurnCallbacks
 from iriis.server.speech import pcm16, wav_bytes
+from iriis.tts.text_normalize import strip_directions
 
 # emit(event_dict, binary_audio_or_None)
 Emit = Callable[[dict[str, Any], bytes | None], Awaitable[None]]
@@ -88,15 +89,15 @@ async def run_turn(session: Session, text: str, emit: Emit, *, speech=None, spea
             seq += 1
             if audio_format == "pcm":
                 data = pcm16(audio)
-                await emit({"type": "audio", "seq": seq, "sample_rate": sr, "format": "pcm_s16le", "bytes": len(data), "text": sentence}, data)
+                await emit({"type": "audio", "seq": seq, "sample_rate": sr, "format": "pcm_s16le", "bytes": len(data), "text": strip_directions(sentence)}, data)
             else:
-                await emit({"type": "audio", "seq": seq, "format": "wav", "text": sentence,
+                await emit({"type": "audio", "seq": seq, "format": "wav", "text": strip_directions(sentence),
                             "data": base64.b64encode(wav_bytes(audio, sr)).decode()}, None)
 
     worker = asyncio.create_task(tts_worker()) if speak and speech else None
 
     async def say(sentence: str) -> None:
-        await emit({"type": "sentence", "text": sentence}, None)
+        await emit({"type": "sentence", "text": strip_directions(sentence)}, None)
         if worker:
             await tts_q.put(sentence)
 
@@ -127,7 +128,7 @@ async def run_turn(session: Session, text: str, emit: Emit, *, speech=None, spea
             await tts_q.put(None)
             await worker
         timings.update({k: v for k, v in result.timings.items()})
-        done = {"type": "done", "session_id": session.id, "text": result.text,
+        done = {"type": "done", "session_id": session.id, "text": strip_directions(result.text),
                 "tool_calls": [{"name": t["name"], "arguments": t["arguments"]} for t in result.tool_calls],
                 "timings": {k: round(v) for k, v in timings.items()}}
         await emit(done, None)

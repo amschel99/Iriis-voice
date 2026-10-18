@@ -118,7 +118,7 @@ class RemoteVoiceClient:
                 if pending_audio is not None:
                     pcm = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
                     self.player.play(pcm, pending_audio.get("sample_rate", OUT_SR))
-                    if self.awaiting_confirm and pending_audio.get("text") == self.confirm_question:
+                    if self.awaiting_confirm and pending_audio.get("text", "").strip() == self.confirm_question.strip():
                         self.confirm_played = True
                     if "first_audio" not in self.timings and hasattr(self, "t_end"):
                         self.timings["end_of_speech_to_audio_ms"] = (time.perf_counter() - self.t_end) * 1000

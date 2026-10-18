@@ -74,7 +74,11 @@ class LLMConfig(BaseModel):
 
 
 class TTSConfig(BaseModel):
-    backend: Literal["kokoro", "piper"] = "kokoro"
+    # orpheus = expressive (real emotion, via Groq; needs GROQ_API_KEY). Falls back to kokoro, then piper.
+    backend: Literal["orpheus", "kokoro", "piper"] = "kokoro"
+    orpheus_model: str = "canopylabs/orpheus-v1-english"
+    orpheus_voice: str = "hannah"          # female: hannah, diana, autumn; male: troy, austin, daniel
+    orpheus_api_key_env: str = "GROQ_API_KEY"
     kokoro_model: str = "models/tts/kokoro-v1.0.int8.onnx"
     kokoro_voices: str = "models/tts/voices-v1.0.bin"
     voice: str = "af_heart"
