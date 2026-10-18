@@ -128,6 +128,13 @@ mcpServers:
     description: Search the web and read web pages as text - news, facts, prices, docs, anything current.
     keywords: [search, google, look, find, web, internet, online, news, latest, today, price, weather, who, what, website, article, read, link, url]
 
+  seryn:                 # Seryn Twin (../seryn-twin): cited PCM / liner / produce database, known problems, data gaps
+    command: ~/rift/seryn-twin/.venv/Scripts/python.exe    # seryn-twin's own venv (pip install -e . there)
+    args: ["-m", "seryn_twin.mcp_server"]
+    tier: auto             # read-only lookups
+    description: Seryn Labs expert tools - PCM cold packs, Glauber's salt blends, paraffins, HDPE casings, crate liners, insulation, produce storage, lab protocols, hazards, Nairobi weather. Every value cited.
+    keywords: [seryn, pack, packs, pcm, phase, melt, melting, freeze, freezing, glauber, sulfate, sulphate, salt, borax, cmc, paraffin, wax, alkane, tetradecane, pentadecane, hexadecane, hdpe, casing, liner, crate, cooler, lid, insulation, eps, vip, foam, tomato, tomatoes, avocado, mango, banana, produce, chilling, recipe, latent, supercooling, nucleator, cold, chill, cool, lab, protocol, test, hazard, headspace]
+
   # Unofficial messaging/social bridges: NEED INTERNET, may break, and risk account bans.
   # Read-mostly; every send/post tool stays at confirm. Their credentials live in their own env.
   whatsapp:              # e.g. a WAHA (whatsapp-web.js / Baileys) MCP bridge on localhost

@@ -6,7 +6,7 @@ from typing import Any, Awaitable, Callable
 
 # Always available regardless of routing: cheap and broadly useful.
 # Always offered: cheap (few tools) and broadly useful. Web search is here so she never thinks she's offline.
-CORE_SERVERS = ("time_and_calc", "memory", "web")
+CORE_SERVERS = ("time_and_calc", "memory", "web", "seryn")
 
 _STOP = set("a an the to of in on for and or is are be me my i you it this that what how can please could would with do does at".split())
 

@@ -70,6 +70,9 @@ class MCPManager:
         command = cfg.command or "python"
         if command in ("python", "python3", "${python}"):
             command = sys.executable  # built-in servers run in Iriis' own venv
+        else:
+            import os
+            command = os.path.expandvars(os.path.expanduser(command))
         return StdioServerParameters(command=command, args=cfg.args, env={**self._base_env(), **cfg.env}, cwd=str(ROOT))
 
     async def _host(self, conn: _Conn) -> None:

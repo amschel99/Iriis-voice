@@ -202,7 +202,7 @@ class DesktopConfig(BaseModel):
     token_env: str = "IRIIS_DESKTOP_TOKEN"
     api_key_env: str = "IRIIS_API_KEY"                # used by the voice client
     servers: list[str] = Field(default_factory=lambda: ["system_info", "files", "shell", "apps_and_media", "clipboard",
-                                                         "web", "browser"])
+                                                         "web", "browser", "seryn"])
     # cloud: the cloud asks you to confirm, and the desktop only runs confirm-tier tools when the
     #        call says you confirmed. local: the desktop also asks in its own terminal (safest).
     confirm_mode: Literal["cloud", "local"] = "cloud"
