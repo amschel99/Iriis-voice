@@ -85,10 +85,12 @@ class Agent:
             facts = self.memory_facts()
         except Exception:
             facts = []
-        return {"role": "system", "content": build_system_prompt(
+        prompt = build_system_prompt(
             self.cfg.assistant_name, self.cfg.user_name, self.cfg.location, self.cfg.timezone, facts,
             conversation_summary=self.summary, last_active=self.last_active,
-            casting=self.cfg.tts.casting(), voice_style=self._voice_style())}
+            casting=self.cfg.tts.casting(), voice_style=self._voice_style())
+        note = getattr(self, "tools_note", "")
+        return {"role": "system", "content": prompt + ("\n\n" + note if note else "")}
 
     def _voice_style(self) -> str:
         """Which tag syntax she should write: only what the voice engine in use can actually perform."""
@@ -133,8 +135,15 @@ class Agent:
 
     async def _select_tools(self, query: str) -> list[dict[str, Any]]:
         if not self.tools:
+            self.tools_note = ""
             return []
         catalog = self.tools.servers_catalog()
+        missing = [s for s in ("web", "browser", "files", "shell") if s not in catalog]
+        # Tell her honestly when the PC link is down, instead of letting her claim she has no internet.
+        self.tools_note = ("Right now your link to the user's computer is down, so web search, the browser, files "
+                           "and the terminal are temporarily unavailable. If asked for them, say the computer link is "
+                           "down and should be back shortly; never say you have no internet access."
+                           if missing else "")
         return await self.router.select(query, catalog, self._llm_pick_servers)
 
     # ------------------------------------------------------------------ tool execution

@@ -97,3 +97,29 @@ def test_sentence_chunker_early_first_chunk():
     c = SentenceChunker(first_chunk_chars=40)
     out = c.push("Well, the weather in Nairobi this afternoon is looking warm, with a little cloud")
     assert out and out[0].endswith(",")
+
+
+def test_web_search_is_always_offered_even_without_keywords():
+    cat = _catalog()
+    cat["web"] = {"description": "search", "keywords": [], "tools": [_tool("web", "web_search"), _tool("web", "read_page")]}
+    router = ToolRouter(max_tools=20)
+    tools = asyncio.run(router.select("did arsenal win yesterday", cat))       # no web keyword in the question
+    assert any(t["function"]["name"] == "web__web_search" for t in tools)
+
+
+def test_she_is_told_honestly_when_the_pc_link_is_down(tmp_path):
+    from iriis.agent.loop import Agent
+    from iriis.agent.permissions import PermissionManager
+    from iriis.config import Config
+
+    class CloudOnly:
+        def servers_catalog(self):
+            return {"time_and_calc": {"description": "", "keywords": [], "tools": [_tool("time_and_calc", "now")]}}
+
+    cfg = Config()
+    cfg.permissions.audit_log = str(tmp_path / "a.jsonl")
+    agent = Agent(cfg, None, CloudOnly(), PermissionManager(cfg, []))
+    asyncio.run(agent._select_tools("search the news"))
+    system = agent._system()["content"]
+    assert "computer is down" in system or "link to the user's computer is down" in system
+    assert "never say you have no internet access" in system
