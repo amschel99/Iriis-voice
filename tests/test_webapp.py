@@ -34,6 +34,113 @@ def test_history_after_a_chat(monkeypatch, tmp_path):
         assert client.get("/v1/history").status_code == 401
 
 
+def test_history_ids_and_permanent_delete_refresh_her_context(monkeypatch, tmp_path):
+    client, _ = make_client(monkeypatch, ["Hello there.", "Second answer."], tmp_path)
+    with client:
+        client.post("/v1/chat", headers=AUTH, json={"message": "hi", "session_id": "owner", "stream": False})
+        client.post("/v1/chat", headers=AUTH, json={"message": "secret plan", "session_id": "owner", "stream": False})
+        h = client.get("/v1/history", headers=AUTH).json()
+        assert len(h) == 4 and all(isinstance(m["id"], int) for m in h)
+        agent = client.app.state.core.sessions.sessions["owner"].agent
+        assert any("secret plan" in m["content"] for m in agent.history.messages)
+        ids = [m["id"] for m in h if m["content"] in ("secret plan",) or m["content"].startswith("Second")]
+        assert client.post("/v1/history/delete", json={"ids": ids}).status_code == 401
+        r = client.post("/v1/history/delete", headers=AUTH, json={"ids": ids, "session": "owner"}).json()
+        assert r["deleted"] == 2
+        h2 = client.get("/v1/history", headers=AUTH).json()
+        assert [m["content"] for m in h2][0] == "hi" and len(h2) == 2
+        assert not any("secret plan" in m["content"] for m in agent.history.messages)   # she forgot it too
+        # ids of another session are never touched
+        assert client.post("/v1/history/delete", headers=AUTH, json={"ids": [h2[0]["id"]], "session": "other"}).json()["deleted"] == 0
+
+
+def test_upload_meta_and_media_range(monkeypatch, tmp_path):
+    client, _ = make_client(monkeypatch, [], tmp_path)
+    with client:
+        data = bytes(range(256)) * 40
+        r = client.post("/v1/upload", headers=AUTH, files={"file": ("clip.mp4", data, "application/octet-stream")})
+        j = r.json()
+        assert r.status_code == 200 and j["mime"] == "video/mp4" and j["size"] == len(data) and j["name"] == "clip.mp4"
+        assert client.post("/v1/upload", files={"file": ("a.txt", b"x", "text/plain")}).status_code == 401
+        meta = client.get(f"/v1/files/{j['id']}/meta", headers=AUTH).json()
+        assert meta["name"] == "clip.mp4" and meta["size"] == len(data)
+        assert client.get("/v1/files/9999/meta", headers=AUTH).status_code == 404
+        full = client.get(f"/v1/media/{j['id']}", headers=AUTH)
+        assert full.status_code == 200 and full.content == data and full.headers["accept-ranges"] == "bytes"
+        part = client.get(f"/v1/media/{j['id']}", headers={**AUTH, "Range": "bytes=100-199"})
+        assert part.status_code == 206 and part.content == data[100:200]
+        assert part.headers["content-range"] == f"bytes 100-199/{len(data)}"
+        tail = client.get(f"/v1/media/{j['id']}", headers={**AUTH, "Range": "bytes=-10"})
+        assert tail.status_code == 206 and tail.content == data[-10:]
+        assert client.get(f"/v1/media/{j['id']}", headers={**AUTH, "Range": f"bytes={len(data)}-"}).status_code == 416
+        assert client.get(f"/v1/files/{j['id']}", headers=AUTH).content == data      # the studio route still works
+
+
+def test_upload_size_limit(monkeypatch, tmp_path):
+    import iriis.server.webapp as w
+    monkeypatch.setattr(w, "MAX_UPLOAD", 1000)
+    client, _ = make_client(monkeypatch, [], tmp_path)
+    with client:
+        assert client.post("/v1/upload", headers=AUTH, files={"file": ("big.bin", b"x" * 2000)}).status_code == 413
+
+
+def test_linkpreview_refuses_private_addresses(monkeypatch, tmp_path):
+    import iriis.server.webapp as w
+    client, _ = make_client(monkeypatch, [], tmp_path)
+    with client:
+        for url in ("http://127.0.0.1:8790/v1/status", "http://169.254.169.254/latest/meta-data/", "http://localhost/",
+                    "http://10.0.0.1/", "file:///etc/passwd", "ftp://example.com/", "http://[::1]/"):
+            j = client.get("/v1/linkpreview", headers=AUTH, params={"url": url}).json()
+            assert j["title"] == "" and j["image"] == "", url
+        assert client.get("/v1/linkpreview", params={"url": "https://example.com"}).status_code == 401
+    assert w._safe_url("https://93.184.216.34/") and not w._safe_url("http://192.168.1.4/")
+
+
+def test_linkpreview_parses_open_graph():
+    import iriis.server.webapp as w
+    html = ('<html><head><title> Plain title </title><meta property="og:title" content="OG Title">'
+            '<meta name="description" content="A page about things."><meta property="og:image" content="/img/card.png">'
+            '<meta property="og:site_name" content="Example"></head></html>')
+    p = w.parse_preview("https://www.example.com/a/b", html)
+    assert p == {"url": "https://www.example.com/a/b", "title": "OG Title", "description": "A page about things.",
+                 "image": "https://www.example.com/img/card.png", "site": "Example"}
+    assert w.parse_preview("https://www.example.com/", "<title>Only</title>")["site"] == "example.com"
+
+
+def test_calls_ring_answer_decline_cancel(monkeypatch, tmp_path):
+    client, _ = make_client(monkeypatch, [], tmp_path)
+    with client:
+        db = client.app.state.core.db
+        now = time.time()
+        ring = db.insert("INSERT INTO calls (at, reason, opening, status, source, created) VALUES (?, ?, ?, ?, ?, ?)",
+                         (now, "Wake up", "Good morning!", "ringing", "user", now))
+        later = db.insert("INSERT INTO calls (at, reason, status, source, created) VALUES (?, ?, ?, ?, ?)",
+                          (now + 3600, "Call mum", "scheduled", "iriis", now))
+        assert [c["id"] for c in client.get("/v1/calls?status=ringing", headers=AUTH).json()] == [ring]
+        assert [c["id"] for c in client.get("/v1/calls/upcoming", headers=AUTH).json()] == [later]
+        a = client.post(f"/v1/calls/{ring}/answer", headers=AUTH).json()
+        assert a == {"id": ring, "reason": "Wake up", "opening": "Good morning!"}
+        assert client.post(f"/v1/calls/{ring}/answer", headers=AUTH).status_code == 404     # only once
+        assert client.post(f"/v1/calls/{later}/cancel", headers=AUTH).json()["ok"]
+        assert client.get("/v1/calls/upcoming", headers=AUTH).json() == []
+        assert client.post(f"/v1/calls/{later}/decline", headers=AUTH).status_code == 404
+
+
+def test_push_all_merges_call_data(monkeypatch, tmp_path):
+    client, _ = make_client(monkeypatch, [], tmp_path)
+    with client:
+        db = client.app.state.core.db
+        client.post("/v1/push/subscribe", headers=AUTH, json={"endpoint": "https://push.example/z", "keys": {"p256dh": "x", "auth": "y"}})
+        sent = []
+        import asyncio
+
+        import iriis.server.webapp as w
+        monkeypatch.setattr(w, "_send_one", lambda sub, payload, priv: (sent.append(json.loads(payload)), 201)[1])
+        assert asyncio.run(w.push_all(db, "Iriis is calling", "Wake up", url="/app?call=3",
+                                      data={"kind": "call", "call_id": 3})) == 1
+        assert sent[0] == {"kind": "call", "call_id": 3, "title": "Iriis is calling", "body": "Wake up", "url": "/app?call=3"}
+
+
 def test_tasks_list_cancel_and_run(monkeypatch, tmp_path):
     client, _ = make_client(monkeypatch, [], tmp_path)
     with client:

@@ -9,19 +9,26 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import ipaddress
 import json
 import logging
+import mimetypes
+import re
+import socket
 import time
+import urllib.parse
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 
 log = logging.getLogger("iriis.webapp")
 APP_DIR = Path(__file__).parent / "static" / "app"
 COOKIE = "iriis_key"
 WEB_SESSION = "owner"          # the app shares one conversation with voice and `iriis ask`
+MAX_UPLOAD = 25 * 1024 * 1024  # photos, videos, voice notes and documents sent in the chat
 
 router = APIRouter()
 
@@ -98,8 +105,135 @@ def setup(require_key):
         def load():
             core.conversations.flush()
             rows = list(core.conversations._since_reset(session))[: max(1, min(limit, 500))]
-            return [{"role": r, "content": c, "ts": t} for _, r, c, t in reversed(rows) if r in ("user", "assistant")]
+            return [{"id": i, "role": r, "content": c, "ts": t} for i, r, c, t in reversed(rows)
+                    if r in ("user", "assistant")]
         return await asyncio.to_thread(load)
+
+    @router.post("/v1/history/delete", dependencies=deps)
+    async def delete_messages(request: Request):
+        """Delete messages permanently (for the user and for Iriis: her live context is reloaded without them)."""
+        body = await request.json()
+        session = str(body.get("session") or WEB_SESSION)
+        try:
+            ids = sorted({int(i) for i in body.get("ids") or []})[:500]
+        except (TypeError, ValueError):
+            raise HTTPException(400, "ids must be message ids")
+        if not ids:
+            return {"deleted": 0}
+        core = _core(request)
+
+        def run():
+            core.conversations.flush()
+            marks = ",".join("?" * len(ids))
+            rows = core.db.execute(f"DELETE FROM messages WHERE id IN ({marks}) AND session_id = ? RETURNING id",
+                                   (*ids, session))
+            s = core.sessions.sessions.get(session)
+            if s is not None:
+                s.agent.history.messages = core.conversations.recent(session, core.cfg.llm.history_max_tokens)
+            return len(rows)
+        return {"deleted": await asyncio.to_thread(run)}
+
+    # ------------------------------------------------------------------ files: uploads, metadata, streaming
+    @router.post("/v1/upload", dependencies=deps)
+    async def upload(request: Request, file: UploadFile = File(...)):
+        """A photo, video, voice note or document the user sends in the chat; kept in the `files` table."""
+        data = bytearray()
+        while chunk := await file.read(1 << 20):
+            data += chunk
+            if len(data) > MAX_UPLOAD:
+                raise HTTPException(413, f"files can be up to {MAX_UPLOAD // (1 << 20)} MB")
+        name = Path(file.filename or "file").name[:200] or "file"
+        mime = (file.content_type or "").split(";")[0].strip()
+        if not mime or mime == "application/octet-stream":
+            mime = mimetypes.guess_type(name)[0] or mime or "application/octet-stream"
+        db = _core(request).db
+        fid = await asyncio.to_thread(db.insert, "INSERT INTO files (name, mime, size, data, created) VALUES (?, ?, ?, ?, ?)",
+                                      (name, mime, len(data), base64.b64encode(bytes(data)).decode(), time.time()))
+        return {"id": fid, "name": name, "mime": mime, "size": len(data)}
+
+    @router.get("/v1/files/{file_id}/meta", dependencies=deps)
+    async def file_meta(file_id: int, request: Request):
+        db = _core(request).db
+        rows = await asyncio.to_thread(db.execute, "SELECT name, mime, size, created FROM files WHERE id = ?", (file_id,))
+        if not rows:
+            raise HTTPException(404, "no such file")
+        name, mime, size, created = rows[0]
+        return {"id": file_id, "name": name, "mime": mime, "size": size, "created": created}
+
+    @router.get("/v1/media/{file_id}", dependencies=deps)
+    async def media(file_id: int, request: Request, download: int = 0):
+        """A stored file, inline, with HTTP Range support (so audio and video can seek)."""
+        db = _core(request).db
+        data = await asyncio.to_thread(_file_bytes, db, file_id)
+        if data is None:
+            raise HTTPException(404, "no such file")
+        name, mime, raw = data
+        quoted = urllib.parse.quote(name)
+        headers = {"Accept-Ranges": "bytes", "Cache-Control": "private, max-age=86400",
+                   "Content-Disposition": f"{'attachment' if download else 'inline'}; filename*=UTF-8''{quoted}"}
+        total = len(raw)
+        rng = request.headers.get("range", "")
+        m = re.fullmatch(r"\s*bytes=(\d*)-(\d*)\s*", rng) if rng else None
+        if m and (m.group(1) or m.group(2)):
+            if m.group(1):
+                start = int(m.group(1))
+                end = min(int(m.group(2)), total - 1) if m.group(2) else total - 1
+            else:                                   # suffix range: the last N bytes
+                start, end = max(0, total - int(m.group(2))), total - 1
+            if start >= total or start > end:
+                return Response(status_code=416, headers={"Content-Range": f"bytes */{total}"})
+            headers["Content-Range"] = f"bytes {start}-{end}/{total}"
+            return Response(raw[start:end + 1], status_code=206, media_type=mime, headers=headers)
+        return Response(raw, media_type=mime, headers=headers)
+
+    @router.get("/v1/linkpreview", dependencies=deps)
+    async def linkpreview(url: str):
+        """Title, description and image of a web page (OpenGraph / Twitter cards), for link previews in the chat."""
+        return await link_preview(url)
+
+    # ------------------------------------------------------------------ calls from Iriis (alarms, reminders, her own)
+    @router.get("/v1/calls", dependencies=deps)
+    async def calls(request: Request, status: str = "ringing", limit: int = 20):
+        db = _core(request).db
+        rows = await asyncio.to_thread(db.execute, "SELECT id, at, reason, status, source FROM calls WHERE status = ? "
+                                       "ORDER BY id DESC LIMIT ?", (status, max(1, min(limit, 100))))
+        return [dict(zip(("id", "at", "reason", "status", "source"), r)) for r in rows]
+
+    @router.get("/v1/calls/upcoming", dependencies=deps)
+    async def calls_upcoming(request: Request, limit: int = 30):
+        db = _core(request).db
+        rows = await asyncio.to_thread(db.execute, "SELECT id, at, reason, status, source, repeat FROM calls WHERE "
+                                       "status = 'scheduled' AND at >= ? ORDER BY at LIMIT ?",
+                                       (time.time() - 60, max(1, min(limit, 100))))
+        return [dict(zip(("id", "at", "reason", "status", "source", "repeat"), r)) for r in rows]
+
+    @router.post("/v1/calls/{call_id}/answer", dependencies=deps)
+    async def call_answer(call_id: int, request: Request):
+        db = _core(request).db
+        rows = await asyncio.to_thread(db.execute, "UPDATE calls SET status = 'answered', answered = ? WHERE id = ? "
+                                       "AND status IN ('ringing', 'scheduled', 'missed') RETURNING id, reason, opening",
+                                       (time.time(), call_id))
+        if not rows:
+            raise HTTPException(404, "that call isn't ringing")
+        i, reason, opening = rows[0]
+        return {"id": i, "reason": reason or "", "opening": opening or ""}
+
+    async def _set_call(call_id: int, request: Request, status: str, allowed: tuple[str, ...]):
+        db = _core(request).db
+        marks = ",".join("?" * len(allowed))
+        rows = await asyncio.to_thread(db.execute, f"UPDATE calls SET status = ? WHERE id = ? AND status IN ({marks}) "
+                                       "RETURNING id", (status, call_id, *allowed))
+        if not rows:
+            raise HTTPException(404, "no such call")
+        return {"ok": True}
+
+    @router.post("/v1/calls/{call_id}/decline", dependencies=deps)
+    async def call_decline(call_id: int, request: Request):
+        return await _set_call(call_id, request, "declined", ("ringing", "scheduled"))
+
+    @router.post("/v1/calls/{call_id}/cancel", dependencies=deps)
+    async def call_cancel(call_id: int, request: Request):
+        return await _set_call(call_id, request, "cancelled", ("scheduled", "ringing"))
 
     @router.get("/v1/tasks", dependencies=deps)
     async def tasks(request: Request, limit: int = 40):
@@ -190,8 +324,9 @@ def _send_one(sub: dict, payload: str, private_pem: str) -> int:
         return getattr(e.response, "status_code", 500) or 500
 
 
-async def push_all(db, title: str, body: str, url: str = "/app") -> int:
-    """Notify every subscribed device; subscriptions the browser has dropped (404/410) are removed."""
+async def push_all(db, title: str, body: str, url: str = "/app", data: dict | None = None) -> int:
+    """Notify every subscribed device; subscriptions the browser has dropped (404/410) are removed.
+    `data` is merged into the payload (e.g. {"kind": "call", "call_id": 7} makes the phone ring)."""
     try:
         rows = await asyncio.to_thread(db.execute, "SELECT endpoint, data FROM push_subs")
         if not rows:
@@ -200,7 +335,7 @@ async def push_all(db, title: str, body: str, url: str = "/app") -> int:
     except Exception as e:  # noqa: BLE001
         log.warning("push unavailable: %s", e)
         return 0
-    payload = json.dumps({"title": title, "body": body[:240], "url": url})
+    payload = json.dumps({**(data or {}), "title": title, "body": body[:240], "url": url})
     sent = 0
     for endpoint, data in rows:
         code = await asyncio.to_thread(_send_one, json.loads(data), payload, priv)
@@ -209,6 +344,147 @@ async def push_all(db, title: str, body: str, url: str = "/app") -> int:
         elif code < 300:
             sent += 1
     return sent
+
+
+def _file_bytes(db, file_id: int) -> tuple[str, str, bytes] | None:
+    rows = db.execute("SELECT name, mime, data FROM files WHERE id = ?", (file_id,))
+    if not rows:
+        return None
+    name, mime, data = rows[0]
+    return name, mime or "application/octet-stream", base64.b64decode(data)
+
+
+# ---------------------------------------------------------------------------- link previews
+_PREVIEWS: dict[str, tuple[float, dict]] = {}
+PREVIEW_TTL, PREVIEW_MAX, PREVIEW_BYTES = 86400.0, 500, 512 * 1024
+_UA = ("Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) "
+       "Chrome/124.0 Mobile Safari/537.36")
+
+
+class _MetaParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.meta: dict[str, str] = {}
+        self.title, self._in_title, self.icon = "", False, ""
+
+    def handle_starttag(self, tag, attrs):
+        a = {k.lower(): (v or "") for k, v in attrs}
+        if tag == "meta":
+            key = (a.get("property") or a.get("name") or "").lower().strip()
+            if key and a.get("content") and key not in self.meta:
+                self.meta[key] = a["content"].strip()
+        elif tag == "title":
+            self._in_title = True
+        elif tag == "link" and "icon" in a.get("rel", "").lower() and not self.icon:
+            self.icon = a.get("href", "")
+
+    def handle_endtag(self, tag):
+        if tag == "title":
+            self._in_title = False
+
+    def handle_data(self, data):
+        if self._in_title and len(self.title) < 300:
+            self.title += data
+
+
+def _public_host(host: str) -> bool:
+    """True if every address the host resolves to is a public one (no loopback, private, link-local...)."""
+    if not host:
+        return False
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except OSError:
+        return False
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0].split("%")[0])
+        except ValueError:
+            return False
+        if getattr(ip, "ipv4_mapped", None):
+            ip = ip.ipv4_mapped
+        if not ip.is_global or ip.is_multicast:
+            return False
+    return bool(infos)
+
+
+def _safe_url(url: str) -> bool:
+    try:
+        u = urllib.parse.urlsplit(url)
+    except ValueError:
+        return False
+    return u.scheme in ("http", "https") and bool(u.hostname) and _public_host(u.hostname)
+
+
+def parse_preview(url: str, html: str) -> dict:
+    p = _MetaParser()
+    try:
+        p.feed(html)
+    except Exception:  # noqa: BLE001
+        pass
+    m = p.meta
+
+    def first(*keys):
+        return next((m[k] for k in keys if m.get(k)), "")
+    image = first("og:image", "og:image:url", "og:image:secure_url", "twitter:image", "twitter:image:src")
+    if image:
+        image = urllib.parse.urljoin(url, image)
+        if not image.startswith(("http://", "https://")):
+            image = ""
+    host = urllib.parse.urlsplit(url).hostname or ""
+    return {"url": url,
+            "title": re.sub(r"\s+", " ", first("og:title", "twitter:title") or p.title).strip()[:200],
+            "description": re.sub(r"\s+", " ", first("og:description", "twitter:description", "description")).strip()[:300],
+            "image": image, "site": (first("og:site_name") or host.removeprefix("www."))[:80]}
+
+
+async def link_preview(url: str) -> dict:
+    url = (url or "").strip()[:2000]
+    empty = {"url": url, "title": "", "description": "", "image": "", "site": urllib.parse.urlsplit(url).hostname or ""}
+    hit = _PREVIEWS.get(url)
+    if hit and time.time() - hit[0] < PREVIEW_TTL:
+        return hit[1]
+    out = empty
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=6.0, follow_redirects=False,
+                                     headers={"User-Agent": _UA, "Accept": "text/html,application/xhtml+xml",
+                                              "Accept-Language": "en"}) as client:
+            target = url
+            for _ in range(6):                      # follow redirects by hand: every hop must be a public host
+                if not await asyncio.to_thread(_safe_url, target):
+                    return empty                    # refused: not cached either, so nothing is learned
+                async with client.stream("GET", target) as r:
+                    if r.status_code in (301, 302, 303, 307, 308) and r.headers.get("location"):
+                        target = urllib.parse.urljoin(target, r.headers["location"])
+                        continue
+                    if r.status_code >= 400:
+                        break
+                    ctype = r.headers.get("content-type", "")
+                    if ctype.startswith("image/"):
+                        out = {**empty, "url": url, "image": target}
+                        break
+                    if "html" not in ctype and "xml" not in ctype:
+                        break
+                    buf = bytearray()
+                    async for chunk in r.aiter_bytes():
+                        buf += chunk
+                        if len(buf) >= PREVIEW_BYTES:
+                            break
+                    enc = r.encoding or "utf-8"
+                    try:
+                        html = buf.decode(enc, errors="replace")
+                    except LookupError:
+                        html = buf.decode("utf-8", errors="replace")
+                    out = {**parse_preview(target, html), "url": url}
+                    break
+    except Exception as e:  # noqa: BLE001
+        log.debug("link preview failed for %s: %s", url, e)
+        out = empty
+    if len(_PREVIEWS) >= PREVIEW_MAX:
+        for k in sorted(_PREVIEWS, key=lambda k: _PREVIEWS[k][0])[: PREVIEW_MAX // 5]:
+            _PREVIEWS.pop(k, None)
+    _PREVIEWS[url] = (time.time(), out)
+    return out
 
 
 def _png_icon(size: int) -> bytes:
