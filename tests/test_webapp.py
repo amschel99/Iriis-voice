@@ -67,3 +67,51 @@ def test_push_key_is_made_once_and_subscriptions_are_kept(monkeypatch, tmp_path)
         asyncio.run(w.push_all(db, "Iriis", "Your task is done."))
         assert sent[0]["body"] == "Your task is done."
         assert db.execute("SELECT COUNT(*) FROM push_subs")[0][0] == 0       # a gone subscription (410) is removed
+
+
+def test_camera_off_until_configured(monkeypatch, tmp_path):
+    monkeypatch.delenv("VISION_MCP_URL", raising=False)
+    monkeypatch.delenv("VISION_ACCESS_KEY", raising=False)
+    client, _ = make_client(monkeypatch, [], tmp_path)
+    with client:
+        st = client.get("/v1/camera/status", headers=AUTH).json()
+        assert st["connected"] is False and "VISION_MCP_URL" in st["why"]
+        assert client.get("/v1/bench/status", headers=AUTH).status_code == 503
+        assert client.get("/app/camera.js").status_code == 200
+        with client.websocket_connect("/v1/camera?token=test-key") as ws:
+            m = json.loads(ws.receive_text())
+            assert m["type"] == "error" and m["fatal"] and "VISION_MCP_URL" in m["text"]
+
+
+def test_bench_proxy_routes(monkeypatch, tmp_path):
+    monkeypatch.setenv("VISION_MCP_URL", "https://bench.example/mcp")
+    monkeypatch.setenv("VISION_ACCESS_KEY", "vk")
+    seen = []
+
+    class R:
+        status_code, content, headers = 200, b"{}", {"content-type": "application/json"}
+
+    class C:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def request(self, method, url, params=None, content=None, headers=None):
+            seen.append((method, url, headers.get("Authorization")))
+            return R()
+
+    import iriis.server.camera as cam
+    monkeypatch.setattr(cam.httpx, "AsyncClient", C)
+    client, _ = make_client(monkeypatch, [], tmp_path)
+    with client:
+        client.get("/v1/bench/media/12", headers=AUTH)
+        client.post("/v1/bench/media/12/analyze", headers=AUTH, json={})
+        client.get("/v1/bench/procedures", headers=AUTH)
+    assert [u for _, u, _ in seen] == ["https://bench.example/media/12", "https://bench.example/api/media/12/analyze",
+                                       "https://bench.example/api/procedures"]
+    assert all(a == "Bearer vk" for _, _, a in seen)

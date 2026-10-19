@@ -73,6 +73,10 @@ def setup(require_key):
         return FileResponse(APP_DIR / "sw.js", media_type="text/javascript",
                             headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"})
 
+    @router.get("/app/camera.js", include_in_schema=False)
+    async def camera_js():
+        return FileResponse(APP_DIR / "camera.js", media_type="text/javascript", headers={"Cache-Control": "no-cache"})
+
     @router.get("/app/manifest.webmanifest", include_in_schema=False)
     async def manifest():
         return FileResponse(APP_DIR / "manifest.webmanifest", media_type="application/manifest+json")

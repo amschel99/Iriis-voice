@@ -324,8 +324,9 @@ def create_app(cfg: Config | None = None) -> FastAPI:
         from fastapi.responses import RedirectResponse
         return RedirectResponse("/app", status_code=307)       # the Iriis app (API guide: /llms.txt, OpenAPI: /docs)
 
-    from iriis.server import webapp
+    from iriis.server import camera, webapp
     app.include_router(webapp.setup(require_key))
+    app.include_router(camera.setup(require_key, ws_authorised, cfg.server.api_key_env, core_ref))
 
     # ------------------------------------------------------------------ REST
 
