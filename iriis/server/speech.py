@@ -27,11 +27,30 @@ def wav_bytes(audio: np.ndarray, sr: int) -> bytes:
 
 
 def decode_audio_file(data: bytes) -> np.ndarray:
-    """WAV/FLAC/OGG upload -> 16 kHz mono float32."""
-    import soundfile as sf
+    """Any recording -> 16 kHz mono float32. WAV/FLAC via soundfile; what phones and browsers actually send
+    (WebM/Opus from Chrome and Android, MP4/AAC from iPhone Safari, Ogg from Firefox and Telegram) via PyAV."""
     from iriis.audio.playback import resample
-    audio, sr = sf.read(io.BytesIO(data), dtype="float32", always_2d=True)
-    return resample(audio.mean(axis=1), sr, 16000)
+    try:
+        import soundfile as sf
+        audio, sr = sf.read(io.BytesIO(data), dtype="float32", always_2d=True)
+        return resample(audio.mean(axis=1), sr, 16000)
+    except Exception:  # noqa: BLE001  (not a format libsndfile knows: decode with FFmpeg through PyAV)
+        pass
+    import av
+    chunks = []
+    with av.open(io.BytesIO(data), mode="r") as c:
+        stream = next((s for s in c.streams if s.type == "audio"), None)
+        if stream is None:
+            raise ValueError("no audio in that recording")
+        res = av.AudioResampler(format="flt", layout="mono", rate=16000)
+        for frame in c.decode(stream):
+            for f in res.resample(frame):
+                chunks.append(f.to_ndarray().reshape(-1))
+        for f in res.resample(None):
+            chunks.append(f.to_ndarray().reshape(-1))
+    if not chunks:
+        raise ValueError("the recording is empty")
+    return np.concatenate(chunks).astype(np.float32)
 
 
 class Speech:

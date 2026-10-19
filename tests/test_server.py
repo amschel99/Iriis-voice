@@ -233,3 +233,12 @@ def test_new_desktop_connection_replaces_a_stale_one(monkeypatch, tmp_path):
             t.join(5)
     assert received and received[0]["name"] == "files__read_text_file"   # the NEW agent got the call
     assert r.status_code == 200
+
+
+def test_phone_recordings_decode():
+    """Chrome/Android send WebM/Opus voice notes; the server must read them (it used to fail: 'can't hear you')."""
+    from pathlib import Path
+
+    from iriis.server.speech import decode_audio_file
+    pcm = decode_audio_file((Path(__file__).parent / "question.webm").read_bytes())
+    assert pcm.dtype.name == "float32" and 16000 * 1.5 < len(pcm) < 16000 * 6 and abs(pcm).max() > 0.05

@@ -26,6 +26,7 @@ pint==0.26.1
 num2words==0.5.14
 onnxruntime==1.31.0
 faster-whisper==1.2.1
+av==19.0.1                # decodes phone recordings (WebM/Opus, MP4/AAC, Ogg) for speech-to-text
 ctranslate2==4.8.3
 kokoro-onnx==0.6.1
 piper-tts==1.8.0
