@@ -116,6 +116,10 @@ class TTSConfig(BaseModel):
     orpheus_api_key_env: str = "GROQ_API_KEY"
     orpheus_token_env: str = "ORPHEUS_TOKEN"   # open: the ORPHEUS_TOKEN your voice server was given
     orpheus_host_token_env: str = ""       # open + protected Hugging Face endpoint: e.g. "HF_TOKEN"
+    # Desktop-side GPU power control (Hugging Face Inference Endpoint name; needs HF_TOKEN in .env).
+    # Your voice wakes it (no wake word needed); `gpu_idle_s` of quiet from both of you puts it to sleep.
+    gpu_endpoint: str = ""
+    gpu_idle_s: float = 300.0
     # Casting sheet per flavour: how each voice sounds and what it suits; the AI casts characters from it.
     voice_casting: dict[str, dict[str, str]] = Field(default_factory=lambda: {k: dict(v) for k, v in DEFAULT_CASTING.items()})
 

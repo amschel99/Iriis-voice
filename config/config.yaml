@@ -81,6 +81,8 @@ tts:
   orpheus_flavor: open         # open = your own GPU (deploy/orpheus_modal.py on Modal; <laugh>/<sigh> sounds)
                                # groq = Groq-hosted (GROQ_API_KEY; [angry]-style directions; rate limited)
   orpheus_url: ""              # open: the URL `modal deploy` prints. Set it on Railway: IRIIS__TTS__ORPHEUS_URL
+  gpu_endpoint: iriis-orpheus      # desktop turns this Hugging Face GPU on when you talk, off after gpu_idle_s of quiet
+  gpu_idle_s: 300
   orpheus_voice: ""            # her own voice; empty = tara (open) / hannah (groq)
   # Casting sheets: the AI picks voices for characters from these descriptions. They are FIRST GUESSES:
   # run `iriis voices`, listen, then describe what each voice really sounds like and what it suits.

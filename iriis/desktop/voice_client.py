@@ -46,6 +46,12 @@ class RemoteVoiceClient:
         self.confirm_played = False
         self.timings: dict[str, float] = {}
         self.followup_until = 0.0
+        # GPU power: your voice wakes it, quiet puts it to sleep (iriis/desktop/gpu.py). A separate VAD
+        # instance: Silero is stateful, and the recording endpointer owns self.vad.
+        from iriis.desktop.gpu import GpuManager
+        self.gpu = GpuManager(cfg.tts.gpu_endpoint, cfg.tts.gpu_idle_s)
+        self.activity_vad = SileroVAD() if self.gpu.enabled else None
+        self._speech_ms = 0.0
 
     # ------------------------------------------------------------------ mic plumbing (same pattern as the local loop)
 
@@ -54,6 +60,33 @@ class RemoteVoiceClient:
             block = await self.mic.read()
             if self.sink is not None:
                 self.sink.put_nowait(block)
+            if self.activity_vad is not None:
+                try:
+                    self._watch_activity(block)
+                except Exception as e:  # noqa: BLE001  (power saving must never stop her listening)
+                    self.ui.warn(f"activity detector error: {e}")
+
+    def _watch_activity(self, block) -> None:
+        """Any ~300 ms of your speech (wake word or not) wakes the GPU; her talking keeps it awake."""
+        if self.player.busy or time.monotonic() - self.player.last_audio_end < 0.5:
+            self.gpu.activity()          # she's talking: keep the GPU, but don't count her echo as you
+            self.activity_vad.reset()
+            self._speech_ms = 0.0
+            return
+        probs = self.activity_vad.process(block)
+        frame_ms = 512 / self.cfg.audio.sample_rate * 1000
+        for p in probs:
+            self._speech_ms = self._speech_ms + frame_ms if p >= 0.6 else max(0.0, self._speech_ms - frame_ms)
+        if self._speech_ms >= 300:
+            self._speech_ms = 0.0
+            if self.gpu.activity() and self.ws is not None:
+                asyncio.get_running_loop().create_task(self._send_quietly({"type": "wake"}))
+
+    async def _send_quietly(self, msg: dict) -> None:
+        try:
+            await self.ws.send(json.dumps(msg))
+        except Exception:  # noqa: BLE001
+            pass
 
     def _take_mic(self) -> asyncio.Queue:
         self.sink = asyncio.Queue()
@@ -293,6 +326,7 @@ class RemoteVoiceClient:
         self.mic = MicStream(cfg.audio.input_device, cfg.audio.sample_rate, cfg.audio.block_ms,
                              aec=getattr(self.player, "aec", None))
         await self.mic.start()
+        self.gpu.start()
         pump = asyncio.create_task(self._pump())
         link = asyncio.create_task(self._keep_connected())
         trigger = {"wakeword": "Say 'Hey Jarvis'", "push_to_talk": f"Hold {cfg.wakeword.push_to_talk_key.upper()}", "always": "Just talk"}[cfg.wakeword.mode]
@@ -302,6 +336,7 @@ class RemoteVoiceClient:
         finally:
             link.cancel()
             pump.cancel()
+            self.gpu.stop()
             await self.mic.stop()
             if self._owns_player:      # a shared speaker outlives a restart of the voice client
                 self.player.close()
@@ -317,7 +352,9 @@ class RemoteVoiceClient:
         headers = {"Authorization": f"Bearer {key}"} if key else {}
         while True:
             try:
-                async with connect(url, additional_headers=headers, max_size=32 * 1024 * 1024, ping_interval=20) as ws:
+                # generous keepalive: Railway's proxy and a busy laptop can delay a pong past 20 s
+                async with connect(url, additional_headers=headers, max_size=32 * 1024 * 1024,
+                                   ping_interval=25, ping_timeout=60) as ws:
                     await ws.send(json.dumps({"type": "hello", "session_id": "owner", "speak": True}))
                     ready = json.loads(await ws.recv())
                     self.ws = ws

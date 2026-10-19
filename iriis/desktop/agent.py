@@ -143,7 +143,7 @@ class DesktopAgent:
         while True:
             error = ""
             try:
-                async with connect(url, additional_headers=headers, ping_interval=20, ping_timeout=20,
+                async with connect(url, additional_headers=headers, ping_interval=25, ping_timeout=60,
                                    max_size=16 * 1024 * 1024) as ws:
                     self.ws = ws
                     await ws.send(json.dumps(self._hello()))
