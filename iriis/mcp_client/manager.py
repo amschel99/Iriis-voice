@@ -77,6 +77,9 @@ class MCPManager:
             url = os.path.expandvars(cfg.url or "")
             if not url or "$" in url:
                 raise ValueError(f"http transport needs a url (got {cfg.url!r}; is its environment variable set?)")
+            url = url.strip().rstrip("/")
+            if urlparse(url).path in ("", "/"):
+                url += "/mcp"                      # "https://host" given: the MCP endpoint is /mcp
             host = urlparse(url).hostname
             if host not in ("127.0.0.1", "localhost", "::1") and not cfg.needs_internet:
                 raise ValueError(f"{url} is not on localhost; set needs_internet: true to allow it")
@@ -114,6 +117,8 @@ class MCPManager:
                 conn.ready.set()
                 await conn.stop.wait()
         except Exception as e:  # noqa: BLE001
+            while isinstance(e, BaseExceptionGroup) and e.exceptions:    # show the real cause, not "TaskGroup"
+                e = e.exceptions[0]
             conn.error = f"{e.__class__.__name__}: {e}"[:300]
             log.warning("MCP server %s failed: %s", conn.cfg.name, conn.error)
         finally:
