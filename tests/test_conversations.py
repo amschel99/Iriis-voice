@@ -292,3 +292,16 @@ def test_one_huge_turn_is_trimmed_without_looping_forever():
         h.add({"role": "assistant", "content": "", "tool_calls": []})
         h.add({"role": "tool", "content": "page text " * 2000, "tool_call_id": str(i)})
     assert all(len(m["content"]) <= 2012 for m in h.messages if m["role"] == "tool")
+
+
+def test_long_turns_shorten_older_tool_results():
+    from iriis.agent.loop import compact_turn
+    turn = [{"role": "user", "content": "research"}]
+    for i in range(10):
+        turn.append({"role": "tool", "content": f"page {i} " + "x" * 10_000})
+    compact_turn(turn, budget=40_000, keep=3)
+    total = sum(len(m["content"]) for m in turn)
+    assert total <= 3 * 10_010 + 7 * 1_530      # 3 newest whole + 7 heads (from ~100k)
+    assert all(len(m["content"]) > 10_000 for m in turn[-3:])          # the newest stay whole
+    assert turn[1]["content"].endswith("[shortened to save space]") and turn[1]["content"].startswith("page 0")
+    assert compact_turn(turn, budget=40_000, keep=3) == 0               # idempotent

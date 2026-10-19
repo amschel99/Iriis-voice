@@ -53,6 +53,26 @@ class TurnResult:
     timings: dict[str, float] = field(default_factory=dict)
 
 
+
+TURN_BUDGET_CHARS = 60_000   # one turn's tool results (a long research task) before older ones are shortened
+KEEP_WHOLE = 3               # the most recent tool results stay whole
+
+
+def compact_turn(turn: list[dict[str, Any]], budget: int = TURN_BUDGET_CHARS, keep: int = KEEP_WHOLE) -> int:
+    """Within one turn, every page read stays in context. Past `budget` characters, shorten the older tool results
+    (head kept, marked) so long tasks stay fast and inside the model's context. Returns characters removed."""
+    tools = [m for m in turn if m.get("role") == "tool" and isinstance(m.get("content"), str)]
+    total = sum(len(m["content"]) for m in turn if isinstance(m.get("content"), str))
+    removed = 0
+    for m in tools[:-keep] if keep else tools:
+        if total - removed <= budget:
+            break
+        c = m["content"]
+        if len(c) > 1600 and not c.endswith("[shortened to save space]"):
+            m["content"] = c[:1500] + "\n[shortened to save space]"
+            removed += len(c) - len(m["content"])
+    return removed
+
 class Agent:
     def __init__(self, cfg: Config, llm: LLMClient, tools: ToolProvider | None,
                  permissions: PermissionManager, memory_facts: Callable[[], list[str]] | None = None,
@@ -277,6 +297,7 @@ class Agent:
         nudged = False          # retried once after an empty reply
         nudge: list[dict[str, Any]] = []
         for _iteration in range(self.cfg.llm.max_tool_iterations + 2):
+            compact_turn(turn)
             messages = [self._system(), *self.history.messages, *turn, *nudge]
             chunker = SentenceChunker()
             full_text = ""
