@@ -73,3 +73,8 @@ Server -> client:
 ## Connected services
 
 She also reaches Seryn Twin, Seryn Vision and Iriis HQ (the owner's chief of staff, iriis.riftfi.com) with her own keys; integrators don't need those keys to use her.
+
+## Background turns
+
+- `POST /v1/chat` with `"background": true`: if the client disconnects mid-reply she keeps working; the reply is saved to the conversation and a notification is sent when it's done. Questions that need a yes are pushed as notifications and wait 10 minutes. `GET /v1/sessions/{id}/state` -> `{busy, pending: [{id, question, session_id}]}` lets a reopened client show "typing…" and pending questions (answer with `POST /v1/confirm`).
+- Camera mode: answers to questions written in view arrive as `answer` with `noticed: true` and `question` (the text she read); send `{"type": "notice", "on": false}` to turn that off.
