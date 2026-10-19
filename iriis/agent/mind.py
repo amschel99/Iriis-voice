@@ -86,6 +86,8 @@ person does afterwards, and decide what is worth keeping in your memory. Reply w
 Rules: only what is new (see what you already know) and useful later; empty lists are fine and common.
 Importance: 1 = trivia, 5 = useful, 8+ = life events, deadlines, health, key people. Never store passwords, keys or codes.
 A skill only when tools solved a multi-step request well.
+How delivery works (not mistakes): files you make (charts, sketches, PDFs) appear in the Iriis app chat by
+themselves; send_file is only for Telegram. Messages starting with [camera] or [Video call...] came from the camera.
 
 What you already know (id: text; don't repeat, but update or retire what changed): {known}
 Open loops: {loops}
@@ -159,7 +161,7 @@ class Mind:
         self.core = core
         self.db = core.db
         self.llm = core.llm
-        self.user = core.cfg.user_name or "the user"
+        self.user = core.cfg.user_name or os.environ.get("IRIIS_USER_NAME", "Amschel")
         self.name = core.cfg.assistant_name or "Iriis"
         self.tz = ZoneInfo(core.cfg.timezone or "Africa/Nairobi")
         self._reflect_lock = asyncio.Lock()
