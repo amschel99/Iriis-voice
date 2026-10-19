@@ -71,3 +71,25 @@ def test_shell_can_use_bash_and_cmd():
         assert argv[-1] == "ls"
     else:
         assert _argv("ls", "bash")[0] == "/bin/bash"
+
+
+def test_relevance_filter_and_focus():
+    from servers.web import focus, relevant
+    junk = [{"title": "How to get help in Windows", "snippet": "Microsoft support", "url": "https://support.microsoft.com"},
+            {"title": "Railway pricing", "snippet": "Hobby plan", "url": "https://railway.com/pricing"}]
+    assert [r["url"] for r in relevant("Railway hobby plan price", junk)] == ["https://railway.com/pricing"]
+    text = "intro " * 200 + "The population was 4,397,073 in 2019. " + "outro " * 200
+    out = focus(text, "population")
+    assert "4,397,073" in out and len(out) < 1000
+
+
+def test_search_falls_through_engines(monkeypatch):
+    from servers import web
+    web._CACHE.clear()
+    monkeypatch.setattr(web, "_ddgs", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("rate limited")))
+    monkeypatch.setattr(web, "_ddg_html", lambda *a, **k: [])
+    monkeypatch.setattr(web.time, "sleep", lambda s: None)
+    monkeypatch.setattr(web, "_wikipedia", lambda q, n: [{"title": "Heat pipe", "url": "https://en.wikipedia.org/wiki/Heat_pipe",
+                                                         "snippet": "a heat pipe transfers heat"}])
+    res, problems = web.search("how does a heat pipe work", 3)
+    assert res and res[0]["url"].endswith("Heat_pipe") and any("rate limited" in p for p in problems)
