@@ -193,7 +193,9 @@ class ServerConfig(BaseModel):
     api_key_env: str = "IRIIS_API_KEY"                # clients: Authorization: Bearer <key>
     desktop_token_env: str = "IRIIS_DESKTOP_TOKEN"    # the desktop agent's separate secret
     # Built-in MCP servers that run inside the cloud container (the rest run on the desktop).
-    cloud_servers: list[str] = Field(default_factory=lambda: ["time_and_calc", "memory", "notes_reminders"])
+    # web: the desktop's copy (home connection, real Chrome) wins while it's online; this one covers when it's off.
+    # seryn: the Seryn Twin on Railway over remote MCP (needs SERYN_API_KEY).
+    cloud_servers: list[str] = Field(default_factory=lambda: ["time_and_calc", "memory", "notes_reminders", "web", "seryn"])
     stt: bool = True                                   # load the STT model (voice + /v1/stt)
     tts: bool = True                                   # load the TTS model (spoken replies)
     confirm_timeout_s: float = 60.0
@@ -206,7 +208,7 @@ class DesktopConfig(BaseModel):
     token_env: str = "IRIIS_DESKTOP_TOKEN"
     api_key_env: str = "IRIIS_API_KEY"                # used by the voice client
     servers: list[str] = Field(default_factory=lambda: ["system_info", "files", "shell", "apps_and_media", "clipboard",
-                                                         "web", "browser", "seryn"])
+                                                         "web", "browser"])
     # cloud: the cloud asks you to confirm, and the desktop only runs confirm-tier tools when the
     #        call says you confirmed. local: the desktop also asks in its own terminal (safest).
     confirm_mode: Literal["cloud", "local"] = "cloud"
@@ -241,7 +243,8 @@ class MCPServerConfig(BaseModel):
     command: str | None = None
     args: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
-    url: str | None = None
+    url: str | None = None                             # http: $VARS are expanded
+    headers: dict[str, str] = Field(default_factory=dict)  # http: e.g. {Authorization: "Bearer ${SERYN_API_KEY}"}
     tier: Tier = "confirm"
     tools: dict[str, Tier] = Field(default_factory=dict)  # per-tool tier overrides
     exclude: list[str] = Field(default_factory=list)      # tools (globs) never shown to the AI

@@ -5,8 +5,6 @@ livekit==1.1.21          # WebRTC echo cancellation (AEC3) for the desktop voice
 openwakeword==0.6.0
 pynput==1.8.2
 pyperclip==1.11.0
-ddgs==9.16.0             # free metasearch (DuckDuckGo, Yahoo, Brave, Mojeek...) for web_search
-pypdf==6.21.1            # read_page on PDFs
 playwright==1.64.0       # read_page renders JavaScript pages in headless Chrome
 sherpa-onnx==1.13.8
 jiwer==4.0.0

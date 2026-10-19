@@ -59,14 +59,23 @@ class MCPManager:
             "DO_NOT_TRACK": "1",
         }
 
-    def _target(self, cfg: MCPServerConfig) -> StdioServerParameters | str:
+    def _target(self, cfg: MCPServerConfig) -> StdioServerParameters | str | Any:
         if cfg.transport == "http":
-            if not cfg.url:
-                raise ValueError("http transport needs a url")
-            host = urlparse(cfg.url).hostname
+            import os
+            url = os.path.expandvars(cfg.url or "")
+            if not url or "$" in url:
+                raise ValueError(f"http transport needs a url (got {cfg.url!r}; is its environment variable set?)")
+            host = urlparse(url).hostname
             if host not in ("127.0.0.1", "localhost", "::1") and not cfg.needs_internet:
-                raise ValueError(f"{cfg.url} is not on localhost; set needs_internet: true to allow it")
-            return cfg.url
+                raise ValueError(f"{url} is not on localhost; set needs_internet: true to allow it")
+            if not cfg.headers:
+                return url
+            headers = {k: os.path.expandvars(v) for k, v in cfg.headers.items()}
+            missing = [k for k, v in headers.items() if "$" in v or v.strip().lower() in ("bearer", "")]
+            if missing:
+                raise ValueError(f"header {missing[0]} needs an environment variable that isn't set: {cfg.headers[missing[0]]}")
+            from mcp.client.streamable_http import create_mcp_http_client, streamable_http_client
+            return streamable_http_client(url, http_client=create_mcp_http_client(headers=headers))
         command = cfg.command or "python"
         if command in ("python", "python3", "${python}"):
             command = sys.executable  # built-in servers run in Iriis' own venv
