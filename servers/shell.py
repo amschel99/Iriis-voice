@@ -42,10 +42,12 @@ def _argv(command: str, shell: str = "") -> list[str]:
 
 
 @mcp.tool()
-def run_command(command: str, working_directory: str = "", shell: str = "") -> str:
-    """Run a terminal command and return its output. shell: "powershell" (default on Windows), "bash" (Git Bash)
-    or "cmd". Read-only commands like 'dir', 'ls', 'git status', 'ping -n 2 example.com' run directly;
-    anything else needs the user's spoken confirmation."""
+def run_command(command: str, purpose: str = "", working_directory: str = "", shell: str = "") -> str:
+    """Run a terminal command and return its output. purpose: what it does in plain everyday words, e.g. "list
+    the files in Downloads" (the user is asked about this, never shown the code; always fill it in).
+    shell: "powershell" (default on Windows), "bash" (Git Bash) or "cmd". Read-only commands like 'dir', 'ls',
+    'git status', 'Get-Process' run directly; anything else needs the user's confirmation. Prefer one simple
+    read-only command over chains that copy or decode files."""
     verdict, reason = classify(command)
     if verdict == "blocked":
         return f"BLOCKED: {reason}. This command is never run."

@@ -118,3 +118,41 @@ def test_one_yes_covers_repeat_page_scripts(tmp_path):
     for _ in range(3):
         assert asyncio.run(agent._execute(ToolCall("browser__browser_evaluate", {"function": "() => 1"}, "x"), known, cb)) == "ok"
     assert len(asked) == 1
+
+
+def test_commands_are_asked_about_by_purpose_not_code():
+    from iriis.agent.permissions import describe_call
+    q = describe_call("shell__run_command", {"command": "$src=\"$env:LOCALAPPDATA\Brave\"; Copy-Item ...", "purpose": "List the open Brave tabs"})
+    assert "list the open Brave tabs" in q and "$env" not in q and "yes to all" in q
+
+
+def test_yes_to_all_stops_repeat_questions(tmp_path):
+    import asyncio
+
+    from iriis.agent.loop import Agent, TurnCallbacks
+    from iriis.config import Config, MCPServerConfig
+    from iriis.llm.base import ToolCall
+
+    class Tools:
+        def servers_catalog(self):
+            return {}
+
+        async def call_tool(self, name, args, confirmed=False):
+            return "done"
+
+    cfg = Config()
+    cfg.permissions.audit_log = str(tmp_path / "a.jsonl")
+    agent = Agent(cfg, None, Tools(), PermissionManager(cfg, [MCPServerConfig(name="shell", tier="confirm")]))
+    asked = []
+
+    async def confirm(q):
+        asked.append(q)
+        return "yes to all"
+
+    async def say(_):
+        pass
+    cb = TurnCallbacks(say=say, confirm=confirm)
+    for cmd in ("Copy-Item a b", "Remove-Item b"):
+        call = ToolCall("shell__run_command", {"command": cmd, "purpose": "tidy up"}, "x")
+        assert asyncio.run(agent._execute(call, {"shell__run_command"}, cb)) == "done"
+    assert len(asked) == 1

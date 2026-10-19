@@ -108,6 +108,46 @@ def top_processes(sort_by: str = "memory", limit: int = 5) -> str:
     return "; ".join(f"{n} {_gb(r)}" if r > 1024**3 else f"{n} {r / 1024**2:.0f} MB" for n, r in top)
 
 
+def _windows() -> list[tuple[str, str]]:
+    """(app, window title) for every visible top-level window (Windows only; read-only)."""
+    import ctypes
+    from ctypes import wintypes
+    import psutil
+    user32 = ctypes.windll.user32
+    out: list[tuple[str, str]] = []
+
+    @ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+    def each(hwnd, _):
+        if user32.IsWindowVisible(hwnd) and user32.GetWindowTextLengthW(hwnd):
+            buf = ctypes.create_unicode_buffer(user32.GetWindowTextLengthW(hwnd) + 1)
+            user32.GetWindowTextW(hwnd, buf, len(buf))
+            pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            try:
+                app = psutil.Process(pid.value).name().rsplit(".", 1)[0]
+            except Exception:  # noqa: BLE001
+                app = "?"
+            if buf.value.strip() and buf.value not in ("Program Manager", "Default IME", "MSCTFIME UI"):
+                out.append((app, buf.value))
+        return True
+
+    user32.EnumWindows(each, 0)
+    return out
+
+
+@mcp.tool()
+def open_windows(app: str = "") -> str:
+    """What's open on the screen: every visible window with its app and title (a browser window's title is its
+    current tab, e.g. "YouTube - Brave"). app filters, e.g. "brave", "chrome", "word". Read-only."""
+    import sys
+    if sys.platform != "win32":
+        return "Listing windows is only supported on Windows."
+    rows = [(a, t) for a, t in _windows() if not app or app.lower() in a.lower() or app.lower() in t.lower()]
+    if not rows:
+        return f"No open windows{' for ' + app if app else ''}."
+    return "\n".join(f"{a}: {t}" for a, t in rows[:60])
+
+
 @mcp.tool()
 def find_process(name: str) -> str:
     """Check whether a program is running, by (partial) process name."""

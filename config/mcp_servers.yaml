@@ -23,7 +23,8 @@ mcpServers:
     args: ["-m", "servers.system_info"]
     tier: auto
     description: This computer's CPU, memory, disk space, battery, uptime, running processes and network.
-    keywords: [computer, laptop, pc, cpu, ram, memory, disk, storage, space, battery, process, running, network, wifi, internet, uptime, slow]
+    keywords: [computer, laptop, pc, cpu, ram, memory, disk, storage, space, battery, process, running, network, wifi, internet, uptime, slow,
+               open, opened, windows, window, tabs, tab, brave, chrome, edge, firefox, word, excel, screen, apps, programs, playing, watching]
 
   files:
     command: python

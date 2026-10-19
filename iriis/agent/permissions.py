@@ -204,6 +204,10 @@ STICKY = {"browser__browser_evaluate"}
 
 def describe_call(tool: str, args: dict[str, Any]) -> str:
     """A short spoken description of exactly what a tool call will do."""
+    if tool.endswith("__run_command"):
+        purpose = str(args.get("purpose") or "").strip().rstrip(".")
+        return (f"Shall I run a command on your computer to {purpose[0].lower() + purpose[1:] if purpose else 'do that'}? "
+                "(Say 'yes to all' and I won't ask again for this kind of thing for 10 minutes.)")
     if tool in PLAIN:
         try:
             return PLAIN[tool].format(**{k: (", ".join(map(str, v)) if isinstance(v, list) else v) for k, v in args.items()})

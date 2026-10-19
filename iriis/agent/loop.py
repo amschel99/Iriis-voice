@@ -73,6 +73,9 @@ def compact_turn(turn: list[dict[str, Any]], budget: int = TURN_BUDGET_CHARS, ke
             removed += len(c) - len(m["content"])
     return removed
 
+# "yes to all" / "always" / "don't ask again": approve this kind of action for the next 10 minutes
+YES_TO_ALL = re.compile(r"\b(yes to all|yes all|all of (them|it)|always|don'?t ask|stop asking|go ahead with (all|everything))\b", re.I)
+
 MORE_TOOLS_NAME = "more_tools"
 MORE_TOOLS = {"type": "function", "function": {
     "name": MORE_TOOLS_NAME,
@@ -234,7 +237,7 @@ class Agent:
             cb.show("tool", f"[confirm?] {call.name} {json.dumps(args, default=str)[:300]}")
             reply = await cb.confirm(question)
             confirmed = is_affirmative(reply, self.cfg.permissions.confirm_words)
-            if confirmed and call.name in STICKY:
+            if confirmed and (call.name in STICKY or YES_TO_ALL.search(reply or "")):
                 self._approved = {**sticky, call.name: time.time() + STICKY_S}
             if not confirmed:
                 self.audit.record(tool=call.name, args=args, tier="confirm", confirmed=False, executed=False)
