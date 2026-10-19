@@ -27,6 +27,13 @@ class FakeApi:
         return {"status": {"state": self.status}}
 
 
+def wait_for(cond, timeout=5.0):
+    t0 = time.time()
+    while time.time() - t0 < timeout and not cond():
+        time.sleep(0.02)
+    return cond()
+
+
 def make(monkeypatch, idle_s=0.2):
     monkeypatch.setenv("HF_TOKEN", "hf_test")
     g = GpuManager("iriis-orpheus", idle_s=idle_s, check_s=0.05)
@@ -45,7 +52,8 @@ def test_disabled_without_endpoint_or_token(monkeypatch):
 def test_sleeps_after_quiet_and_only_once(monkeypatch):
     g, api = make(monkeypatch)
     g.start()
-    time.sleep(0.6)
+    assert wait_for(lambda: g.state == "scaledToZero")
+    time.sleep(0.3)                           # a few more checks: must not scale again
     g.stop()
     assert api.calls.count(("scale_to_zero", "iriis-orpheus")) == 1
     assert g.state == "scaledToZero"
@@ -97,9 +105,8 @@ def test_failed_check_is_retried_not_treated_as_asleep(monkeypatch):
     time.sleep(0.35)
     assert g.slept_at is None                 # "unknown" must not count as off
     api.fail = False
-    time.sleep(0.3)
+    assert wait_for(lambda: ("scale_to_zero", "iriis-orpheus") in api.calls)
     g.stop()
-    assert ("scale_to_zero", "iriis-orpheus") in api.calls
 
 
 def test_works_with_hub_offline_mode(monkeypatch):
