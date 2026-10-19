@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
-<meta name="theme-color" content="#0b1118" media="(prefers-color-scheme: dark)">
-<meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#008069" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#202c33" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Iriis">
 <link rel="manifest" href="/app/manifest.webmanifest">
@@ -12,543 +12,584 @@
 <link rel="apple-touch-icon" href="/app/icon-192.png">
 <title>Iriis</title>
 <style>
-  :root { --bg:#f6f7f9; --panel:#ffffff; --soft:#eef1f5; --line:#e2e6ec; --text:#111827; --dim:#6b7280;
-          --me:#3b82f6; --me-text:#fff; --her:#ffffff; --accent:#3b82f6; --ok:#16a34a; --warn:#d97706; --danger:#dc2626;
-          --shadow:0 1px 2px rgba(0,0,0,.06); }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) { --bg:#0b1118; --panel:#121b26; --soft:#18232f; --line:#1f2b3a; --text:#e9eef4;
-      --dim:#8ea0b5; --me:#3b82f6; --her:#162130; --shadow:none; }
+  /* WhatsApp-like palette (light / dark) */
+  :root {
+    --bar:#008069; --bar-text:#fff; --bg:#efeae2; --wall:rgba(0,0,0,.035); --in:#ffffff; --out:#d9fdd3; --text:#111b21;
+    --meta:#667781; --tick:#53bdeb; --chip:#ffffff; --chip-text:#54656f; --panel:#ffffff; --panel2:#f0f2f5; --line:#e9edef;
+    --accent:#00a884; --accent-text:#fff; --danger:#ea0038; --input:#ffffff; --shadow:0 1px .5px rgba(11,20,26,.13);
   }
-  :root[data-theme="dark"] { --bg:#0b1118; --panel:#121b26; --soft:#18232f; --line:#1f2b3a; --text:#e9eef4; --dim:#8ea0b5;
-      --me:#3b82f6; --her:#162130; --shadow:none; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bar:#202c33; --bar-text:#e9edef; --bg:#0b141a; --wall:rgba(255,255,255,.025); --in:#202c33; --out:#005c4b; --text:#e9edef;
+    --meta:#8696a0; --chip:#182229; --chip-text:#8696a0; --panel:#111b21; --panel2:#202c33; --line:#222d34; --input:#2a3942; --shadow:none; } }
+  :root[data-theme="dark"] { --bar:#202c33; --bar-text:#e9edef; --bg:#0b141a; --wall:rgba(255,255,255,.025); --in:#202c33; --out:#005c4b;
+    --text:#e9edef; --meta:#8696a0; --chip:#182229; --chip-text:#8696a0; --panel:#111b21; --panel2:#202c33; --line:#222d34; --input:#2a3942; --shadow:none; }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-  html, body { margin:0; height:100%; background:var(--bg); color:var(--text);
-               font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
-  body { display:flex; flex-direction:column; height:100dvh; }
-  button, input, textarea { font:inherit; color:inherit; }
-  button { cursor:pointer; border:none; background:none; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text); font:15.5px/1.4 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  body { display:flex; flex-direction:column; height:100dvh; overflow:hidden; }
+  button { font:inherit; color:inherit; background:none; border:none; padding:0; cursor:pointer; }
+  svg.i { width:24px; height:24px; fill:currentColor; display:block; }
 
-  /* top bar */
-  header { display:flex; align-items:center; gap:10px; padding:10px 14px; padding-top:max(10px, env(safe-area-inset-top));
-           background:var(--panel); border-bottom:1px solid var(--line); }
-  .avatar { width:38px; height:38px; border-radius:50%; background:linear-gradient(135deg,#3b82f6,#8b5cf6); display:grid;
-            place-items:center; color:#fff; font-weight:700; flex:none; position:relative; }
-  .avatar .dot { position:absolute; right:0; bottom:0; width:11px; height:11px; border-radius:50%; border:2px solid var(--panel); background:var(--dim); }
-  .avatar .dot.on { background:var(--ok); } .avatar .dot.mid { background:var(--warn); }
-  .who { flex:1; min-width:0; } .who b { display:block; } .who small { color:var(--dim); display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .iconbtn { width:40px; height:40px; border-radius:12px; display:grid; place-items:center; font-size:19px; }
-  .iconbtn:hover { background:var(--soft); }
+  /* header */
+  .bar { display:flex; align-items:center; gap:10px; background:var(--bar); color:var(--bar-text); padding:8px 6px 8px 12px;
+         padding-top:max(8px, env(safe-area-inset-top)); min-height:58px; flex:none; }
+  .ava { width:40px; height:40px; border-radius:50%; flex:none; display:grid; place-items:center; color:#fff; font-weight:600; font-size:18px;
+         background:linear-gradient(140deg,#25d366,#128c7e); }
+  .who { flex:1; min-width:0; } .who b { display:block; font-weight:600; font-size:17px; line-height:1.2; }
+  .who small { display:block; font-size:13px; opacity:.85; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ib { width:42px; height:42px; border-radius:50%; display:grid; place-items:center; flex:none; }
+  .ib:active { background:rgba(255,255,255,.15); }
 
   /* conversation */
-  #chat { flex:1; overflow-y:auto; padding:14px 12px 8px; display:flex; flex-direction:column; gap:6px; scroll-behavior:smooth; }
-  .day { align-self:center; font-size:12px; color:var(--dim); background:var(--soft); padding:3px 10px; border-radius:99px; margin:8px 0; }
-  .msg { max-width:min(82%, 640px); padding:9px 12px; border-radius:18px; white-space:pre-wrap; word-wrap:break-word;
-         box-shadow:var(--shadow); position:relative; animation:pop .15s ease-out; }
-  @keyframes pop { from { transform:translateY(4px); opacity:.4; } }
-  .me { align-self:flex-end; background:var(--me); color:var(--me-text); border-bottom-right-radius:6px; }
-  .her { align-self:flex-start; background:var(--her); border:1px solid var(--line); border-bottom-left-radius:6px; }
-  .msg .t { font-size:11px; opacity:.6; margin-left:8px; float:right; margin-top:6px; }
-  .msg a { color:inherit; text-decoration:underline; }
-  .her a { color:var(--accent); }
-  .activity { align-self:flex-start; font-size:13px; color:var(--dim); display:flex; gap:8px; align-items:center; padding:2px 6px; }
-  .typing span { display:inline-block; width:6px; height:6px; margin:0 1px; border-radius:50%; background:var(--dim); animation:blink 1.2s infinite; }
-  .typing span:nth-child(2) { animation-delay:.2s } .typing span:nth-child(3) { animation-delay:.4s }
-  @keyframes blink { 50% { opacity:.25; } }
-  .card { align-self:flex-start; max-width:min(86%, 520px); background:var(--panel); border:1px solid var(--line); border-radius:16px;
-          padding:12px; box-shadow:var(--shadow); }
-  .card.ask { border-color:var(--warn); }
-  .card .q { margin-bottom:10px; }
-  .card .row { display:flex; gap:8px; flex-wrap:wrap; }
-  .pill { padding:9px 16px; border-radius:99px; background:var(--soft); font-weight:600; }
-  .pill.yes { background:var(--ok); color:#fff; } .pill.no { background:var(--soft); } .pill.all { background:transparent; border:1px solid var(--line); }
-  .card img { max-width:100%; border-radius:10px; display:block; margin-top:4px; }
-  .file { display:flex; gap:10px; align-items:center; text-decoration:none; color:inherit; }
-  .file .ic { width:40px; height:40px; border-radius:10px; background:var(--soft); display:grid; place-items:center; font-size:20px; }
-  .muted { color:var(--dim); font-size:13px; }
+  #chat { flex:1; overflow-y:auto; padding:10px 5% 8px; position:relative;
+          background-color:var(--bg); background-image:radial-gradient(var(--wall) 1.2px, transparent 1.4px); background-size:22px 22px; }
+  .day { display:table; margin:10px auto; padding:5px 12px; border-radius:8px; background:var(--chip); color:var(--chip-text);
+         font-size:12.5px; box-shadow:var(--shadow); text-transform:uppercase; letter-spacing:.02em; }
+  .note { display:table; margin:10px auto; max-width:85%; padding:6px 12px; border-radius:8px; background:#ffeecd; color:#54656f;
+          font-size:12.5px; text-align:center; box-shadow:var(--shadow); }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .note { background:#182229; color:#ffd279; } }
+  .row { display:flex; margin:2px 0; } .row.me { justify-content:flex-end; } .row.first { margin-top:8px; }
+  .b { position:relative; max-width:min(80%, 560px); padding:6px 9px 8px; border-radius:8px; box-shadow:var(--shadow);
+       background:var(--in); white-space:pre-wrap; word-wrap:break-word; }
+  .row.me .b { background:var(--out); }
+  .row.first:not(.me) .b { border-top-left-radius:0; } .row.first.me .b { border-top-right-radius:0; }
+  .row.first:not(.me) .b::before { content:""; position:absolute; left:-8px; top:0; border:8px solid transparent; border-top-color:var(--in); border-right-color:var(--in); border-width:0 8px 10px 0; }
+  .row.first.me .b::before { content:""; position:absolute; right:-8px; top:0; border-style:solid; border-color:var(--out) transparent transparent var(--out); border-width:0 0 10px 8px; }
+  .meta { float:right; margin:8px 0 -6px 10px; font-size:11px; color:var(--meta); display:inline-flex; align-items:center; gap:3px; line-height:1; }
+  .meta svg { width:16px; height:16px; } .meta .read { color:var(--tick); }
+  .b a { color:#027eb5; } @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .b a { color:#53bdeb; } }
+  .b .vn { display:inline-flex; align-items:center; gap:4px; color:var(--meta); font-size:13px; margin-right:4px; vertical-align:-2px; }
+  .b .vn svg { width:15px; height:15px; }
+  .typing { display:inline-flex; gap:4px; padding:4px 2px; } .typing i { width:7px; height:7px; border-radius:50%; background:var(--meta); animation:tp 1.3s infinite; }
+  .typing i:nth-child(2) { animation-delay:.18s } .typing i:nth-child(3) { animation-delay:.36s }
+  @keyframes tp { 0%,60%,100% { opacity:.3; transform:none } 30% { opacity:1; transform:translateY(-3px) } }
+  .btns { margin:4px 0 0; max-width:min(80%, 560px); display:flex; flex-direction:column; gap:2px; }
+  .btns button { background:var(--in); color:#027eb5; font-weight:500; padding:10px; border-radius:8px; box-shadow:var(--shadow); text-align:center; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btns button { color:#53bdeb; } }
+  .btns button:disabled { opacity:.5; }
+  .doc { display:flex; gap:10px; align-items:center; background:rgba(0,0,0,.05); border-radius:6px; padding:10px; text-decoration:none; color:inherit; min-width:220px; }
+  .doc .di { width:36px; height:42px; border-radius:4px; background:#f15c6d; color:#fff; display:grid; place-items:center; font-size:10px; font-weight:700; }
+  .b img.pic { display:block; max-width:100%; max-height:340px; border-radius:6px; margin:-2px -5px 2px; }
+  #down { position:absolute; right:14px; bottom:84px; width:42px; height:42px; border-radius:50%; background:var(--panel); color:var(--meta);
+          box-shadow:0 2px 6px rgba(0,0,0,.2); display:none; place-items:center; z-index:2; }
 
-  /* suggestions + composer */
-  #chips { display:flex; gap:8px; overflow-x:auto; padding:6px 12px; scrollbar-width:none; }
-  #chips::-webkit-scrollbar { display:none; }
-  .chip { flex:none; padding:7px 13px; border-radius:99px; background:var(--panel); border:1px solid var(--line); font-size:14px; white-space:nowrap; }
-  footer { display:flex; align-items:flex-end; gap:8px; padding:8px 10px; padding-bottom:max(10px, env(safe-area-inset-bottom));
-           background:var(--panel); border-top:1px solid var(--line); }
-  #box { flex:1; resize:none; max-height:140px; min-height:44px; padding:11px 14px; border-radius:22px; border:1px solid var(--line);
-         background:var(--bg); outline:none; }
-  #box:focus { border-color:var(--accent); }
-  .round { width:46px; height:46px; border-radius:50%; display:grid; place-items:center; font-size:20px; flex:none; }
-  #send { background:var(--accent); color:#fff; }
-  #mic { background:var(--soft); } #mic.rec { background:var(--danger); color:#fff; animation:ring 1s infinite; }
-  #mic.hf { background:var(--ok); color:#fff; }
-  @keyframes ring { 50% { box-shadow:0 0 0 10px rgba(220,38,38,.18); } }
+  /* composer */
+  .composer { display:flex; align-items:flex-end; gap:6px; padding:6px 8px; padding-bottom:max(8px, env(safe-area-inset-bottom)); flex:none; background:transparent; }
+  .pill { flex:1; display:flex; align-items:flex-end; background:var(--input); border-radius:26px; padding:4px 6px 4px 14px; min-height:48px; box-shadow:var(--shadow); }
+  #box { flex:1; resize:none; border:none; outline:none; background:transparent; color:var(--text); font:inherit; padding:9px 0; max-height:140px; line-height:1.35; }
+  .pill .ib { width:40px; height:40px; color:var(--meta); }
+  .fab { width:48px; height:48px; border-radius:50%; background:var(--accent); color:var(--accent-text); display:grid; place-items:center; flex:none;
+         box-shadow:0 1px 3px rgba(0,0,0,.2); touch-action:none; -webkit-user-select:none; user-select:none; }
+  .fab.rec { transform:scale(1.25); background:var(--danger); }
+  .recbar { flex:1; display:none; align-items:center; gap:10px; background:var(--input); border-radius:26px; min-height:48px; padding:0 16px; box-shadow:var(--shadow); color:var(--meta); }
+  .recbar .dot { width:10px; height:10px; border-radius:50%; background:var(--danger); animation:bl 1s infinite; } @keyframes bl { 50% { opacity:.2 } }
+  .recbar .tm { color:var(--text); font-variant-numeric:tabular-nums; } .recbar .sl { margin-left:auto; font-size:14px; }
 
-  /* drawer */
-  #drawer { position:fixed; inset:0; background:rgba(0,0,0,.4); display:none; z-index:20; }
-  #drawer.open { display:block; }
-  #panel { position:absolute; right:0; top:0; bottom:0; width:min(420px, 100%); background:var(--bg); overflow-y:auto;
-           padding:14px; padding-top:max(14px, env(safe-area-inset-top)); display:flex; flex-direction:column; gap:12px; }
-  .tabs { display:flex; gap:6px; background:var(--soft); padding:4px; border-radius:12px; }
-  .tabs button { flex:1; padding:8px; border-radius:9px; font-weight:600; color:var(--dim); }
-  .tabs button.on { background:var(--panel); color:var(--text); box-shadow:var(--shadow); }
-  .sec { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:12px; }
-  .sec h3 { margin:0 0 8px; font-size:14px; color:var(--dim); text-transform:uppercase; letter-spacing:.04em; }
-  .task { padding:10px 0; border-top:1px solid var(--line); } .task:first-of-type { border-top:none; }
-  .badge { font-size:12px; padding:2px 8px; border-radius:99px; background:var(--soft); color:var(--dim); }
-  .badge.done { background:#dcfce7; color:#166534; } .badge.running { background:#dbeafe; color:#1e40af; }
-  .badge.failed { background:#fee2e2; color:#991b1b; } .badge.scheduled { background:#fef3c7; color:#92400e; }
-  .skill { display:flex; justify-content:space-between; padding:6px 0; border-top:1px solid var(--line); font-size:14px; }
-  .skill:first-of-type { border-top:none; }
-  .guide ol { margin:0; padding-left:20px; } .guide li { margin:8px 0; }
-  .btn { padding:10px 14px; border-radius:12px; background:var(--accent); color:#fff; font-weight:600; }
-  .btn.ghost { background:var(--soft); color:var(--text); }
-  .toggle { display:flex; justify-content:space-between; align-items:center; padding:8px 0; }
-  .toast { position:fixed; left:50%; bottom:110px; transform:translateX(-50%); background:#111827; color:#fff; padding:10px 16px;
-           border-radius:12px; font-size:14px; z-index:30; display:none; max-width:90vw; }
+  /* full-screen pages (tasks, status, settings, guide) */
+  .page { position:fixed; inset:0; background:var(--panel); z-index:30; display:flex; flex-direction:column; transform:translateX(100%); transition:transform .22s ease; }
+  .page.open { transform:none; }
+  .page .content { flex:1; overflow-y:auto; padding-bottom:env(safe-area-inset-bottom); }
+  .sect { padding:14px 18px 6px; color:var(--accent); font-size:14px; font-weight:500; }
+  .item { display:flex; gap:14px; align-items:center; padding:13px 18px; border-bottom:1px solid var(--line); }
+  .item .t { flex:1; min-width:0; } .item .t b { display:block; font-weight:400; font-size:16px; } .item .t small { color:var(--meta); font-size:13.5px; display:block; }
+  .item .ic { color:var(--meta); }
+  .item.click { cursor:pointer; } .item.click:active { background:var(--panel2); }
+  .tag { font-size:12px; padding:2px 8px; border-radius:10px; background:var(--panel2); color:var(--meta); white-space:nowrap; }
+  .tag.done { background:#d9fdd3; color:#056b46; } .tag.running { background:#cdeefb; color:#035d84; } .tag.failed { background:#ffd6dc; color:#a1001f; } .tag.scheduled { background:#fff3c4; color:#7a5800; }
+  .smallbtn { padding:7px 12px; border-radius:18px; border:1px solid var(--line); color:var(--accent); font-weight:500; font-size:14px; }
+  .switch { position:relative; width:40px; height:22px; flex:none; } .switch input { opacity:0; width:0; height:0; }
+  .switch span { position:absolute; inset:0; background:#c4c9cc; border-radius:22px; transition:.2s; } .switch span::before { content:""; position:absolute; width:18px; height:18px; left:2px; top:2px; border-radius:50%; background:#fff; transition:.2s; }
+  .switch input:checked + span { background:var(--accent); } .switch input:checked + span::before { transform:translateX(18px); }
+  .report { white-space:pre-wrap; padding:6px 18px 12px; color:var(--text); font-size:14.5px; }
+  .guide { padding:6px 18px 24px; } .guide h3 { color:var(--accent); font-size:15px; margin:18px 0 6px; font-weight:500; }
+  .guide ol { padding-left:20px; margin:0; } .guide li { margin:8px 0; }
+  .menu { position:fixed; right:8px; top:calc(52px + env(safe-area-inset-top)); background:var(--panel); border-radius:6px; box-shadow:0 4px 18px rgba(0,0,0,.25);
+          z-index:25; min-width:200px; padding:6px 0; display:none; }
+  .menu.open { display:block; } .menu button { display:block; width:100%; text-align:left; padding:12px 20px; font-size:15px; }
+  .menu button:active { background:var(--panel2); }
+  .toast { position:fixed; left:50%; bottom:90px; transform:translateX(-50%); background:#3b4a54; color:#fff; padding:10px 16px; border-radius:20px;
+           font-size:14px; z-index:60; display:none; max-width:88vw; text-align:center; }
+
+  /* voice call */
+  .call { position:fixed; inset:0; z-index:40; display:none; flex-direction:column; align-items:center; color:#fff;
+          background:radial-gradient(circle at 50% 30%, #1f6f5c 0%, #0b141a 70%); padding:max(24px, env(safe-area-inset-top)) 20px max(28px, env(safe-area-inset-bottom)); }
+  .call.open { display:flex; }
+  .call .top { text-align:center; margin-top:4vh; } .call .top b { font-size:26px; font-weight:500; display:block; } .call .top small { opacity:.8; font-size:15px; }
+  .call .big { position:relative; width:150px; height:150px; margin:7vh 0 4vh; }
+  .call .big .ava { width:150px; height:150px; font-size:60px; position:relative; z-index:1; }
+  .call .ring { position:absolute; inset:0; border-radius:50%; border:3px solid rgba(37,211,102,.55); opacity:0; }
+  .call.speaking .ring { animation:ring 1.6s infinite; } .call.speaking .ring:nth-child(2) { animation-delay:.5s; }
+  .call.listening .big .ava { box-shadow:0 0 0 calc(var(--lvl, 0) * 26px) rgba(255,255,255,.12); transition:box-shadow .08s; }
+  @keyframes ring { 0% { transform:scale(1); opacity:.9 } 100% { transform:scale(1.55); opacity:0 } }
+  .call .said { min-height:70px; max-width:560px; text-align:center; font-size:17px; line-height:1.45; opacity:.92; }
+  .call .said small { display:block; opacity:.6; font-size:14px; margin-bottom:6px; }
+  .call .ctl { margin-top:auto; display:flex; gap:22px; align-items:center; background:rgba(255,255,255,.08); padding:14px 22px; border-radius:40px; }
+  .call .ctl .c { width:56px; height:56px; border-radius:50%; display:grid; place-items:center; background:rgba(255,255,255,.14); }
+  .call .ctl .c.off { background:#fff; color:#0b141a; } .call .ctl .end { background:var(--danger); }
 </style>
 </head>
 <body>
-<header>
-  <div class="avatar">I<span id="dot" class="dot"></span></div>
-  <div class="who"><b>Iriis</b><small id="sub">connecting…</small></div>
-  <button class="iconbtn" id="cambtn" title="Camera: let her see and guide you">📷</button>
-  <button class="iconbtn" id="speakbtn" title="Read replies aloud">🔈</button>
-  <button class="iconbtn" id="menubtn" title="Tasks, status, settings, help">☰</button>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></symbol>
+  <symbol id="i-video" viewBox="0 0 24 24"><path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11l-4 4z"/></symbol>
+  <symbol id="i-call" viewBox="0 0 24 24"><path d="M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1.02-.24c1.12.37 2.33.57 3.57.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1.02l-2.2 2.2z"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><path d="M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm0 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5.3-3a5.3 5.3 0 0 1-10.6 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-1.7z"/></symbol>
+  <symbol id="i-micoff" viewBox="0 0 24 24"><path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23A6.9 6.9 0 0 0 19 11zm-4.02.17c0-.06.02-.11.02-.17V5a3 3 0 0 0-6 0v.18l5.98 5.99zM4.27 3 3 4.27l6.01 6.01V11a3 3 0 0 0 3 3c.22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52A5.3 5.3 0 0 1 6.7 11H5a7 7 0 0 0 6 6.92V21h2v-3.08c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M2.01 21 23 12 2.01 3 2 10l15 2-15 2z"/></symbol>
+  <symbol id="i-cam" viewBox="0 0 24 24"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4zM9 2 7.17 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3.17L15 2H9zm3 15a5 5 0 1 1 0-10 5 5 0 0 1 0 10z"/></symbol>
+  <symbol id="i-dd" viewBox="0 0 18 18"><path d="M17.4 4.6 16.2 3.4 9.6 10l1.2 1.2 6.6-6.6zm-4.2 0L12 3.4 5.4 10 1.8 6.4.6 7.6 5.4 12.4l7.8-7.8zM13.8 3.4 7.2 10l-.6-.6-1.2 1.2 1.8 1.8 7.8-7.8-1.2-1.2z" opacity="0"/><path d="m15.01 3.316-.478-.372a.365.365 0 0 0-.51.063L8.666 9.879a.32.32 0 0 1-.484.033l-.358-.325a.319.319 0 0 0-.484.032l-.378.483a.418.418 0 0 0 .036.541l1.32 1.266c.143.14.361.125.484-.033l6.272-8.048a.366.366 0 0 0-.064-.512zm-4.1 0-.478-.372a.365.365 0 0 0-.51.063L4.566 9.879a.32.32 0 0 1-.484.033L1.891 7.769a.366.366 0 0 0-.515.006l-.423.433a.364.364 0 0 0 .006.514l3.258 3.185c.143.14.361.125.484-.033l6.272-8.048a.365.365 0 0 0-.063-.51z"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></symbol>
+  <symbol id="i-end" viewBox="0 0 24 24"><path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1a1 1 0 0 1-.56.9 11.5 11.5 0 0 0-2.66 1.85.99.99 0 0 1-1.41-.01L.29 13.08a1 1 0 0 1 0-1.41C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67a1 1 0 0 1 0 1.41l-2.48 2.48a.99.99 0 0 1-1.41.01 11.4 11.4 0 0 0-2.67-1.85 1 1 0 0 1-.56-.9v-3.1A15 15 0 0 0 12 9z"/></symbol>
+  <symbol id="i-vol" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05A4.47 4.47 0 0 0 16.5 12zM14 3.23v2.06a7 7 0 0 1 0 13.42v2.06A9 9 0 0 0 14 3.23z"/></symbol>
+  <symbol id="i-task" viewBox="0 0 24 24"><path d="M19 3h-4.18A3 3 0 0 0 12 1a3 3 0 0 0-2.82 2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm-7 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2zm-2 14-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></symbol>
+</svg>
+
+<header class="bar">
+  <div class="ava">I</div>
+  <div class="who"><b>Iriis</b><small id="status">connecting…</small></div>
+  <button class="ib" id="vidbtn" title="Video call: she sees through your camera"><svg class="i"><use href="#i-video"/></svg></button>
+  <button class="ib" id="callbtn" title="Voice call: talk hands-free"><svg class="i"><use href="#i-call"/></svg></button>
+  <button class="ib" id="menubtn" title="Menu"><svg class="i"><use href="#i-more"/></svg></button>
 </header>
+<div class="menu" id="menu">
+  <button data-page="tasks">Tasks & routines</button>
+  <button data-page="status">Status</button>
+  <button data-page="settings">Settings</button>
+  <button data-page="guide">How to use Iriis</button>
+  <button id="newchat">Start over</button>
+</div>
 
 <main id="chat" aria-live="polite"></main>
-<div id="chips"></div>
-<footer>
-  <textarea id="box" rows="1" placeholder="Message Iriis…" enterkeyhint="send"></textarea>
-  <button class="round" id="mic" title="Hold to talk · double-tap for hands-free">🎤</button>
-  <button class="round" id="send" title="Send" style="display:none">➤</button>
-</footer>
+<button id="down" title="Latest"><svg class="i"><use href="#i-down"/></svg></button>
 
-<div id="drawer"><div id="panel">
-  <div style="display:flex;justify-content:space-between;align-items:center">
-    <b style="font-size:18px">Iriis</b><button class="iconbtn" id="closebtn">✕</button>
+<div class="composer">
+  <div class="pill" id="pill">
+    <textarea id="box" rows="1" placeholder="Message" enterkeyhint="send" aria-label="Message"></textarea>
+    <button class="ib" id="cambtn2" title="Show her with your camera"><svg class="i"><use href="#i-cam"/></svg></button>
   </div>
-  <div class="tabs">
-    <button data-tab="tasks" class="on">Tasks</button><button data-tab="status">Status</button>
-    <button data-tab="settings">Settings</button><button data-tab="help">Guide</button>
+  <div class="recbar" id="recbar"><span class="dot"></span><span class="tm" id="rectime">0:00</span><span class="sl">‹ Slide to cancel</span></div>
+  <button class="fab" id="fab" aria-label="Hold to record a voice message"><svg class="i" id="fabicon"><use href="#i-mic"/></svg></button>
+</div>
+
+<!-- pages -->
+<section class="page" id="page-tasks"><header class="bar"><button class="ib" data-close><svg class="i"><use href="#i-back"/></svg></button><div class="who"><b>Tasks & routines</b><small>background jobs and repeating ones</small></div></header><div class="content" id="tasks"></div></section>
+<section class="page" id="page-status"><header class="bar"><button class="ib" data-close><svg class="i"><use href="#i-back"/></svg></button><div class="who"><b>Status</b><small>what's connected right now</small></div></header><div class="content" id="statusbody"></div></section>
+<section class="page" id="page-settings"><header class="bar"><button class="ib" data-close><svg class="i"><use href="#i-back"/></svg></button><div class="who"><b>Settings</b></div></header>
+  <div class="content">
+    <div class="sect">Notifications</div>
+    <div class="item"><div class="t"><b>Notifications on this device</b><small id="pushstate">Reminders, finished tasks and routines, even with the app closed</small></div><button class="smallbtn" id="pushon">Turn on</button></div>
+    <div class="item click" id="pushtest"><div class="t"><b>Send a test notification</b></div></div>
+    <div class="sect">Voice</div>
+    <div class="item"><div class="t"><b>Read replies aloud</b><small>Voice messages are always answered aloud</small></div><label class="switch"><input type="checkbox" id="speakopt"><span></span></label></div>
+    <div class="item"><div class="t"><b>Use her own voice</b><small>Iriis's voice from the server instead of the phone's</small></div><label class="switch"><input type="checkbox" id="servervoice"><span></span></label></div>
+    <div class="sect">Appearance</div>
+    <div class="item"><div class="t"><b>Theme</b></div><select id="theme" style="font:inherit;padding:6px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--text)"><option value="">System</option><option value="light">Light</option><option value="dark">Dark</option></select></div>
+    <div class="sect">App</div>
+    <div class="item"><div class="t"><b>Install Iriis</b><small id="installhelp"></small></div><button class="smallbtn" id="installbtn" hidden>Install</button></div>
+    <a class="item click" href="/app/logout" style="text-decoration:none;color:inherit"><div class="t"><b style="color:var(--danger)">Log out</b></div></a>
   </div>
-  <div id="tab-tasks"></div>
-  <div id="tab-status" hidden></div>
-  <div id="tab-settings" hidden>
-    <div class="sec"><h3>Notifications</h3>
-      <p class="muted">Reminders, finished tasks and routines arrive on this device, even with the app closed.</p>
-      <div class="row" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="pushon">Turn on</button><button class="btn ghost" id="pushtest">Send a test</button></div>
-      <p class="muted" id="pushstate"></p>
-    </div>
-    <div class="sec"><h3>Voice</h3>
-      <div class="toggle"><span>Read her replies aloud</span><input type="checkbox" id="speakopt"></div>
-      <div class="toggle"><span>Her own voice (server) instead of the phone's</span><input type="checkbox" id="servervoice"></div>
-      <p class="muted">🎤: hold to talk. Double-tap 🎤 for hands-free: just talk; she answers out loud.</p>
-    </div>
-    <div class="sec"><h3>Appearance</h3>
-      <div class="toggle"><span>Theme</span><select id="theme"><option value="">Auto</option><option value="light">Light</option><option value="dark">Dark</option></select></div>
-    </div>
-    <div class="sec"><h3>Conversation</h3>
-      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost" id="newchat">Start over</button><a class="btn ghost" href="/app/logout" style="text-decoration:none">Log out</a></div>
-    </div>
-    <div class="sec"><h3>Install</h3><p class="muted" id="installhelp"></p><button class="btn" id="installbtn" hidden>Install Iriis</button></div>
+</section>
+<section class="page" id="page-guide"><header class="bar"><button class="ib" data-close><svg class="i"><use href="#i-back"/></svg></button><div class="who"><b>How to use Iriis</b></div></header><div class="content guide" id="guide"></div></section>
+
+<!-- voice call -->
+<section class="call" id="call">
+  <div class="top"><b>Iriis</b><small id="callstate">Connecting…</small></div>
+  <div class="big"><span class="ring"></span><span class="ring"></span><div class="ava">I</div></div>
+  <div class="said" id="callsaid"></div>
+  <div class="ctl">
+    <button class="c" id="callspk" title="Her own voice / phone voice"><svg class="i"><use href="#i-vol"/></svg></button>
+    <button class="c" id="callmute" title="Mute microphone"><svg class="i" id="callmuteicon"><use href="#i-mic"/></svg></button>
+    <button class="c" id="callvid" title="Switch to video"><svg class="i"><use href="#i-video"/></svg></button>
+    <button class="c end" id="callend" title="End call"><svg class="i"><use href="#i-end"/></svg></button>
   </div>
-  <div id="tab-help" hidden class="guide"></div>
-</div></div>
+</section>
 <div class="toast" id="toast"></div>
 
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
-const chat = $("chat"), box = $("box");
-const SESSION = "owner";
-let busy = false, current = null, lastDay = "", speakReplies = false, serverVoice = false, audioQ = [], playing = false;
+const chat = $("chat"), box = $("box"), SESSION = "owner";
 const pref = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
+let busy = false, lastDay = "", lastRole = "", online = false, desktop = false;
+let speakReplies = pref("iriis_speak") === "1", serverVoice = pref("iriis_server_voice") === "1";
 
-// ---------------------------------------------------------------- helpers
-function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
-function linkify(s) {
-  return esc(s).replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)\]'"])/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
-}
-function time(ts) { return new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); }
+// ---------------------------------------------------------------- small helpers
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const linkify = (s) => esc(s).replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)\]'"])/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+const hhmm = (ts) => new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 function dayLabel(ts) {
-  const d = new Date(ts * 1000), t = new Date(); const y = new Date(); y.setDate(t.getDate() - 1);
+  const d = new Date(ts * 1000), t = new Date(), y = new Date(); y.setDate(t.getDate() - 1);
   if (d.toDateString() === t.toDateString()) return "Today";
   if (d.toDateString() === y.toDateString()) return "Yesterday";
-  return d.toLocaleDateString([], { weekday: "long", day: "numeric", month: "short" });
+  return d.toLocaleDateString([], { day: "numeric", month: "long", year: d.getFullYear() === t.getFullYear() ? undefined : "numeric" });
 }
-function toast(t) { const e = $("toast"); e.textContent = t; e.style.display = "block"; clearTimeout(e._t); e._t = setTimeout(() => e.style.display = "none", 3500); }
-function atBottom() { return chat.scrollHeight - chat.scrollTop - chat.clientHeight < 120; }
-function scroll(force) { if (force || atBottom()) chat.scrollTop = chat.scrollHeight; }
-function dayMark(ts) { const l = dayLabel(ts); if (l !== lastDay) { lastDay = l; const d = document.createElement("div"); d.className = "day"; d.textContent = l; chat.appendChild(d); } }
+function toast(t, ms = 3200) { const e = $("toast"); e.textContent = t; e.style.display = "block"; clearTimeout(e._t); e._t = setTimeout(() => e.style.display = "none", ms); }
+const nearBottom = () => chat.scrollHeight - chat.scrollTop - chat.clientHeight < 140;
+function toBottom(force) { if (force || nearBottom()) chat.scrollTop = chat.scrollHeight; }
+chat.addEventListener("scroll", () => { $("down").style.display = nearBottom() ? "none" : "grid"; });
+$("down").onclick = () => { chat.scrollTo({ top: chat.scrollHeight, behavior: "smooth" }); };
+function setStatus(t) { $("status").textContent = t; }
+function idleStatus() { setStatus(!online ? "connecting…" : desktop ? "online" : "online · your computer is offline"); }
 
-function bubble(role, text, ts = Date.now() / 1000) {
+function dayMark(ts) { const l = dayLabel(ts); if (l !== lastDay) { lastDay = l; lastRole = ""; const d = document.createElement("div"); d.className = "day"; d.textContent = l; chat.appendChild(d); } }
+function bubble(role, text, ts = Date.now() / 1000, opts = {}) {
   dayMark(ts);
-  const m = document.createElement("div");
-  m.className = "msg " + (role === "user" ? "me" : "her");
-  m.innerHTML = linkify(text) + `<span class="t">${time(ts)}</span>`;
-  chat.appendChild(m); scroll(role === "user"); return m;
+  const me = role === "user", row = document.createElement("div");
+  row.className = "row" + (me ? " me" : "") + (lastRole !== role ? " first" : ""); lastRole = role;
+  const b = document.createElement("div"); b.className = "b";
+  const vn = opts.voice ? '<span class="vn"><svg class="i"><use href="#i-mic"/></svg></span>' : "";
+  const ticks = me ? '<svg class="i read"><use href="#i-dd"/></svg>' : "";
+  b.innerHTML = vn + linkify(text) + `<span class="meta">${hhmm(ts)}${ticks}</span>`;
+  row.appendChild(b); chat.appendChild(row); toBottom(me);
+  return b;
+}
+function setBubble(b, text, ts = Date.now() / 1000) { b.innerHTML = linkify(text) + `<span class="meta">${hhmm(ts)}</span>`; }
+function noteLine(text) { const n = document.createElement("div"); n.className = "note"; n.textContent = text; chat.appendChild(n); toBottom(); }
+function typingBubble() {
+  const row = document.createElement("div"); row.className = "row" + (lastRole !== "assistant" ? " first" : ""); lastRole = "assistant";
+  row.innerHTML = '<div class="b"><span class="typing"><i></i><i></i><i></i></span></div>'; chat.appendChild(row); toBottom(true); return row;
 }
 
-// friendly words for what she's doing (tool names -> plain English)
-const DOING = { web: "Searching the web", browser: "Using your browser", google: "Checking Gmail / Calendar",
-  seryn: "Asking the Seryn Twin", studio: "Making it", money: "Checking your money", tasks: "Setting up the task",
-  files: "Looking through your files", shell: "Running a command", memory: "Remembering", notes_reminders: "Noting it",
-  documents: "Working on the document", bench: "Looking at your bench", self: "Checking how I'm set up",
-  time_and_calc: "Working it out", system_info: "Checking your computer", apps_and_media: "Using your apps",
-  clipboard: "Using the clipboard", more_tools: "Getting the right tools" };
-function doing(name) { const s = (name || "").split("__")[0]; return DOING[s] || "Working on it"; }
+// what she's doing, in the header like "typing…"
+const DOING = { web: "searching the web…", browser: "using your browser…", google: "checking Gmail and Calendar…", seryn: "asking the Seryn Twin…",
+  studio: "making it…", money: "checking your money…", tasks: "setting up the task…", files: "looking through your files…",
+  shell: "running a command…", memory: "remembering…", notes_reminders: "making a note…", documents: "working on the document…",
+  bench: "looking at your bench…", self: "checking how she's set up…", time_and_calc: "working it out…", system_info: "checking your computer…",
+  apps_and_media: "using your apps…", clipboard: "using the clipboard…", more_tools: "getting the right tools…" };
 
 // ---------------------------------------------------------------- history
 async function loadHistory() {
   try {
-    const r = await fetch("/v1/history?limit=80");
+    const r = await fetch("/v1/history?limit=100");
     if (r.status === 401) { location.href = "/app/login"; return; }
     const items = await r.json();
-    chat.innerHTML = ""; lastDay = "";
-    if (!items.length) welcome();
-    for (const m of items) bubble(m.role, m.content, m.ts);
-    scroll(true);
-  } catch (e) { toast("Couldn't load the conversation; showing new messages only."); }
-}
-function welcome() {
-  const m = bubble("assistant", "Hi, I'm Iriis. Ask me anything, or tap a suggestion below. Tap ☰ → Guide for a quick tour.");
-  m.style.opacity = .9;
+    chat.innerHTML = ""; lastDay = ""; lastRole = "";
+    if (!items.length) { noteLine("Messages here are private to you. Say hi, hold the mic to talk, or tap 📞 for a voice call."); }
+    for (const m of items) bubble(m.role, m.content.replace(/^\[camera\] /, "📷 "), m.ts);
+    toBottom(true);
+  } catch (e) { noteLine("Couldn't load earlier messages. New ones will still appear."); }
 }
 
 // ---------------------------------------------------------------- sending + streaming replies
 async function send(text, opts = {}) {
-  text = (text || "").trim(); if (!text) return;
-  if (busy) { toast("She's still answering, one moment…"); return; }
-  busy = true; box.value = ""; resize(); syncButtons();
-  bubble("user", text);
-  const act = document.createElement("div"); act.className = "activity";
-  act.innerHTML = '<span class="typing"><span></span><span></span><span></span></span><span>Thinking…</span>';
-  chat.appendChild(act); scroll(true);
-  let reply = null, said = "", files = new Set();
-  const wantVoice = speakReplies || opts.voice;
+  text = (text || "").trim(); if (!text) return null;
+  if (busy) { toast("One moment, she's still replying"); return null; }
+  busy = true; box.value = ""; resize(); syncFab();
+  bubble("user", text, Date.now() / 1000, { voice: opts.voice });
+  const typing = typingBubble(); setStatus("typing…");
+  const speak = opts.voice || speakReplies || callOpen;
+  let reply = null, said = "", files = new Set(), fullText = "";
   try {
     const r = await fetch("/v1/chat", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text, session_id: SESSION, stream: true, speak: wantVoice && serverVoice }) });
-    if (r.status === 401) { location.href = "/app/login"; return; }
+      body: JSON.stringify({ message: text, session_id: SESSION, stream: true, speak: speak && serverVoice }) });
+    if (r.status === 401) { location.href = "/app/login"; return null; }
     if (!r.ok || !r.body) throw new Error("HTTP " + r.status);
     const reader = r.body.getReader(), dec = new TextDecoder(); let buf = "", ev = "";
     for (;;) {
       const { value, done } = await reader.read(); if (done) break;
-      buf += dec.decode(value, { stream: true });
-      let i;
+      buf += dec.decode(value, { stream: true }); let i;
       while ((i = buf.indexOf("\n")) >= 0) {
         const line = buf.slice(0, i).trimEnd(); buf = buf.slice(i + 1);
         if (line.startsWith("event:")) { ev = line.slice(6).trim(); continue; }
         if (!line.startsWith("data:")) continue;
         let d; try { d = JSON.parse(line.slice(5)); } catch (e) { continue; }
         if (ev === "sentence") {
-          if (!reply) { act.remove(); reply = bubble("assistant", ""); }
-          said += (said ? " " : "") + d.text;
-          reply.innerHTML = linkify(said) + `<span class="t">${time(Date.now() / 1000)}</span>`; scroll();
-          if (wantVoice && !serverVoice) speakLocal(d.text);
+          if (!reply) { typing.remove(); reply = bubble("assistant", ""); setStatus("typing…"); }
+          said += (said ? " " : "") + d.text; setBubble(reply, said); toBottom();
+          if (speak && !serverVoice) voice.say(d.text);
+          if (callOpen) callShow("Iriis", said);
         } else if (ev === "tool") {
-          const t = d.text || "", m = t.match(/^(?:->|<-)\s+(\S+)/);
-          if (m && t.startsWith("->")) act.lastChild.textContent = doing(m[1]) + "…";
+          const t = d.text || "", m = t.match(/^->\s+(\S+)/);
+          if (m) setStatus(DOING[m[1].split("__")[0]] || "working on it…");
           for (const f of t.matchAll(/\bfile (\d+)\b/g)) files.add(f[1]);
-        } else if (ev === "screen") {
-          screenCard(d.text);
-        } else if (ev === "confirm") {
-          confirmCard(d);
-        } else if (ev === "audio") {
-          if (d.data) { audioQ.push(d.data); playNext(); }
-        } else if (ev === "error") {
-          act.remove(); bubble("assistant", "Sorry, that failed: " + (d.message || "unknown error"));
-        } else if (ev === "done") {
-          if (!reply && d.text) { act.remove(); reply = bubble("assistant", d.text); if (wantVoice && !serverVoice) speakLocal(d.text); }
-        }
+        } else if (ev === "screen") { bubble("assistant", d.text);
+        } else if (ev === "confirm") { confirmMsg(d);
+        } else if (ev === "audio") { if (d.data) voice.queueWav(d.data);
+        } else if (ev === "error") { typing.remove(); bubble("assistant", "Sorry, something went wrong: " + (d.message || "unknown error"));
+        } else if (ev === "done") { fullText = d.text || said; if (!reply && d.text) { typing.remove(); reply = bubble("assistant", d.text); if (speak && !serverVoice) voice.say(d.text); if (callOpen) callShow("Iriis", d.text); } }
       }
     }
   } catch (e) {
-    bubble("assistant", navigator.onLine ? "I couldn't reach my brain just now (it may be restarting). Try again in a moment."
-                                         : "You're offline. I'll be here when you're back.");
+    typing.remove();
+    bubble("assistant", navigator.onLine ? "I couldn't reach my brain just now; it may be restarting. Try again in a moment." : "You're offline. Send it again when you're back.");
   } finally {
-    act.remove(); busy = false; syncButtons();
-    for (const id of files) fileCard(id);
-    if (current) current = null;
-    loadTasks(true);
+    typing.remove(); busy = false; idleStatus(); syncFab();
+    for (const id of files) fileMsg(id);
   }
+  return fullText;
 }
 
-function screenCard(text) {
-  const c = document.createElement("div"); c.className = "card"; c.innerHTML = linkify(text); chat.appendChild(c); scroll();
+function confirmMsg(d) {
+  const b = bubble("assistant", d.question);
+  const wrap = document.createElement("div"); wrap.className = "btns";
+  const opts = [["Yes", "yes", "You said yes"], ["No", "no", "You said no"], ["Yes to all (10 min)", "yes to all", "Yes to all for 10 minutes"]];
+  for (const [label, text, done] of opts) {
+    const btn = document.createElement("button"); btn.textContent = label;
+    btn.onclick = async () => {
+      wrap.querySelectorAll("button").forEach((x) => x.disabled = true); wrap.remove(); noteLine(done);
+      try { await fetch("/v1/confirm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id: d.session_id, id: d.id, text }) }); }
+      catch (e) { toast("Couldn't send your answer"); }
+    };
+    wrap.appendChild(btn);
+  }
+  b.parentElement.after(wrap); toBottom(true);
+  if (navigator.vibrate) navigator.vibrate(40);
+  if (callOpen) callShow("Iriis", d.question + " (answer on screen)");
 }
-function confirmCard(d) {
-  const c = document.createElement("div"); c.className = "card ask";
-  c.innerHTML = `<div class="q">${esc(d.question)}</div><div class="row">
-    <button class="pill yes">Yes</button><button class="pill no">No</button><button class="pill all">Yes to all (10 min)</button></div>`;
-  const answer = async (text, label) => {
-    c.querySelectorAll("button").forEach((b) => b.disabled = true);
-    c.querySelector(".row").innerHTML = `<span class="muted">${label}</span>`;
-    try { await fetch("/v1/confirm", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: d.session_id, id: d.id, text }) }); } catch (e) { toast("Couldn't send the answer."); }
-  };
-  c.querySelector(".yes").onclick = () => answer("yes", "✓ You said yes");
-  c.querySelector(".no").onclick = () => answer("no", "✕ You said no");
-  c.querySelector(".all").onclick = () => answer("yes to all", "✓ Yes to all for 10 minutes");
-  chat.appendChild(c); scroll(true);
-  if (navigator.vibrate) navigator.vibrate(60);
-}
-async function fileCard(id) {
-  const url = `/v1/files/${id}`;
+async function fileMsg(id) {
   try {
-    const r = await fetch(url); if (!r.ok) return;
-    const type = r.headers.get("content-type") || "", name = (r.headers.get("content-disposition") || "").match(/filename="([^"]+)"/);
-    const blob = await r.blob(), href = URL.createObjectURL(blob), fname = name ? name[1] : `file ${id}`;
-    const c = document.createElement("div"); c.className = "card";
-    if (type.startsWith("image/")) c.innerHTML = `<a href="${href}" target="_blank"><img src="${href}" alt="${esc(fname)}"></a><div class="muted">${esc(fname)}</div>`;
-    else c.innerHTML = `<a class="file" href="${href}" download="${esc(fname)}"><span class="ic">📄</span><span><b>${esc(fname)}</b><br><span class="muted">${Math.round(blob.size / 1024)} KB · tap to open</span></span></a>`;
-    chat.appendChild(c); scroll();
+    const r = await fetch(`/v1/files/${id}`); if (!r.ok) return;
+    const type = r.headers.get("content-type") || "", m = (r.headers.get("content-disposition") || "").match(/filename="([^"]+)"/);
+    const blob = await r.blob(), href = URL.createObjectURL(blob), name = m ? m[1] : `file ${id}`;
+    const b = bubble("assistant", "");
+    if (type.startsWith("image/")) b.innerHTML = `<a href="${href}" target="_blank"><img class="pic" src="${href}" alt="${esc(name)}"></a><span class="meta">${hhmm(Date.now() / 1000)}</span>`;
+    else { const ext = (name.split(".").pop() || "").toUpperCase().slice(0, 4);
+      b.innerHTML = `<a class="doc" href="${href}" download="${esc(name)}"><span class="di">${esc(ext)}</span><span><b>${esc(name)}</b><br><small style="color:var(--meta)">${Math.max(1, Math.round(blob.size / 1024))} KB · ${esc(ext)}</small></span></a><span class="meta">${hhmm(Date.now() / 1000)}</span>`; }
   } catch (e) {}
 }
 
-// ---------------------------------------------------------------- voice out
-function speakLocal(text) {
-  if (!("speechSynthesis" in window) || !text) return;
-  try { const u = new SpeechSynthesisUtterance(text); u.rate = 1.03; speechSynthesis.speak(u); } catch (e) {}
-}
-function playNext() {
-  if (playing || !audioQ.length) return; playing = true;
-  const a = new Audio("data:audio/wav;base64," + audioQ.shift());
-  a.onended = a.onerror = () => { playing = false; playNext(); }; a.play().catch(() => { playing = false; });
-}
-function stopTalking() { audioQ = []; try { speechSynthesis.cancel(); } catch (e) {} }
+// ---------------------------------------------------------------- voice out (phone voice or her own) and in (recording)
+const voice = {
+  q: [], playing: false, untilMs: 0,
+  say(t) {
+    if (!t || !window.speechSynthesis) return;
+    try { const u = new SpeechSynthesisUtterance(t); u.rate = 1.04; this.untilMs = performance.now() + 60000;
+      u.onstart = () => callMode("speaking"); u.onend = u.onerror = () => { this.untilMs = performance.now() + 500; if (!speechSynthesis.pending && !speechSynthesis.speaking) callMode("listening"); };
+      speechSynthesis.speak(u); } catch (e) {}
+  },
+  queueWav(b64) { this.q.push(b64); this.next(); },
+  next() {
+    if (this.playing || !this.q.length) return; this.playing = true; callMode("speaking");
+    const a = new Audio("data:audio/wav;base64," + this.q.shift());
+    a.onended = a.onerror = () => { this.playing = false; if (this.q.length) this.next(); else { this.untilMs = performance.now() + 500; callMode("listening"); } };
+    a.play().catch(() => { this.playing = false; });
+  },
+  speaking() { return this.playing || performance.now() < this.untilMs || (window.speechSynthesis && speechSynthesis.speaking); },
+  stop() { this.q = []; try { speechSynthesis.cancel(); } catch (e) {} this.untilMs = 0; },
+};
+function unlockAudio() { try { const u = new SpeechSynthesisUtterance(" "); u.volume = 0; speechSynthesis.speak(u); } catch (e) {} }
 
-// ---------------------------------------------------------------- voice in: hold to talk, double-tap for hands-free
-let mic = null, rec = null, chunks = [], hf = { on: false, an: null, buf: null, floor: 0.01, sp: 0, si: 0, t0: 0, timer: null }, lastTap = 0;
-async function micStream() {
+let mic = null;
+async function getMic() {
   if (mic && mic.getAudioTracks().some((t) => t.readyState === "live")) return mic;
   mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
   return mic;
 }
-function recType() { return ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"].find((t) => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || ""; }
-async function startRec() {
-  try { await micStream(); } catch (e) { toast("Allow the microphone for Iriis in your browser settings."); return false; }
-  const type = recType(); chunks = [];
-  try { rec = new MediaRecorder(mic, type ? { mimeType: type } : undefined); } catch (e) { toast("This browser can't record audio."); return false; }
-  rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
-  rec.start(250); stopTalking(); return true;
+const recType = () => ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"].find((t) => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || "";
+async function transcribe(blob) {
+  const f = new FormData(); f.append("file", blob, "voice." + (blob.type.includes("mp4") ? "mp4" : blob.type.includes("ogg") ? "ogg" : "webm"));
+  let r;
+  try { r = await fetch("/v1/stt", { method: "POST", body: f }); }
+  catch (e) { toast("No connection: your voice message wasn't sent"); return null; }
+  let j = {}; try { j = await r.json(); } catch (e) {}
+  if (!r.ok) { toast(r.status === 503 ? "Voice isn't available on the server right now; type instead" : `Couldn't understand the recording (${r.status})`); return null; }
+  const t = (j.text || "").trim();
+  if (t.length < 2 || /^(thank you\.?|thanks for watching\.?|you\.?|\.+)$/i.test(t)) { toast("I didn't catch that, try again"); return null; }
+  return t;
 }
-function finishRec(minMs = 500) {
-  return new Promise((res) => {
-    if (!rec || rec.state !== "recording") return res(null);
-    const t0 = hf.t0 || 0;
-    rec.onstop = async () => {
-      const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" }); rec = null;
-      if (blob.size < 2500) return res(null);
-      const f = new FormData(); f.append("file", blob, "q." + (blob.type.includes("mp4") ? "mp4" : blob.type.includes("ogg") ? "ogg" : "webm"));
-      try {
-        const r = await fetch("/v1/stt", { method: "POST", body: f }); const j = await r.json();
-        const t = (j.text || "").trim();
-        res(t.length > 1 && !/^(thank you\.?|thanks for watching\.?|you\.?|\.+)$/i.test(t) ? t : null);
-      } catch (e) { toast("Couldn't reach the server to hear you."); res(null); }
-    };
-    rec.stop();
-  });
-}
-const micBtn = $("mic");
-micBtn.addEventListener("pointerdown", async (e) => {
-  e.preventDefault();
-  const now = Date.now();
-  if (now - lastTap < 350) { lastTap = 0; return handsFree(!hf.on); }       // double-tap: hands-free on/off
-  lastTap = now;
-  if (hf.on) return;
-  if (await startRec()) micBtn.classList.add("rec");
+
+// hold the mic to record a voice message (slide left to cancel), like WhatsApp
+const fab = $("fab"); let rec = null, recChunks = [], recStart = 0, recTimer = null, startX = 0, cancelled = false;
+function syncFab() { const has = box.value.trim().length > 0; $("fabicon").innerHTML = `<use href="#i-${has ? "send" : "mic"}"/>`; fab.setAttribute("aria-label", has ? "Send" : "Hold to record a voice message"); }
+fab.addEventListener("pointerdown", async (e) => {
+  if (box.value.trim()) return;                      // a tap on Send is handled on click
+  e.preventDefault(); unlockAudio();
+  try { await getMic(); } catch (err) { toast("Allow the microphone to send voice messages"); return; }
+  const type = recType(); recChunks = []; cancelled = false; startX = e.clientX;
+  try { rec = new MediaRecorder(mic, type ? { mimeType: type } : undefined); } catch (err) { toast("This browser can't record audio"); return; }
+  rec.ondataavailable = (ev) => ev.data.size && recChunks.push(ev.data);
+  rec.onstop = async () => {
+    const dur = performance.now() - recStart, blob = new Blob(recChunks, { type: rec.mimeType || "audio/webm" }); rec = null;
+    if (cancelled) { toast("Voice message cancelled"); return; }
+    if (dur < 700) { toast("Hold the mic to record, release to send"); return; }
+    setStatus("listening…"); const t = await transcribe(blob); idleStatus();
+    if (t) send(t, { voice: true });
+  };
+  rec.start(250); recStart = performance.now(); voice.stop();
+  fab.classList.add("rec"); $("pill").style.display = "none"; $("recbar").style.display = "flex";
+  try { fab.setPointerCapture(e.pointerId); } catch (x) {}
+  recTimer = setInterval(() => { const s = Math.floor((performance.now() - recStart) / 1000); $("rectime").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; }, 250);
 });
-const release = async () => {
-  if (hf.on || !rec) return;
-  micBtn.classList.remove("rec");
-  const t = await finishRec(); if (t) send(t, { voice: true });
-};
-micBtn.addEventListener("pointerup", release); micBtn.addEventListener("pointercancel", release);
-micBtn.addEventListener("contextmenu", (e) => e.preventDefault());
+fab.addEventListener("pointermove", (e) => { if (rec && startX - e.clientX > 90 && !cancelled) { cancelled = true; endRecording(); } });
+function endRecording() { clearInterval(recTimer); $("rectime").textContent = "0:00"; fab.classList.remove("rec"); $("pill").style.display = "flex"; $("recbar").style.display = "none"; if (rec && rec.state === "recording") rec.stop(); }
+fab.addEventListener("pointerup", () => { if (rec) endRecording(); });
+fab.addEventListener("pointercancel", () => { if (rec) { cancelled = true; endRecording(); } });
+fab.addEventListener("click", () => { if (box.value.trim()) send(box.value); });
+fab.addEventListener("contextmenu", (e) => e.preventDefault());
 
-async function handsFree(on) {
-  if (!on) { hf.on = false; clearInterval(hf.timer); micBtn.classList.remove("hf", "rec"); if (rec) rec.stop(); toast("Hands-free off"); return; }
-  try { await micStream(); } catch (e) { toast("Allow the microphone for hands-free."); return; }
-  const AC = window.AudioContext || window.webkitAudioContext; const ctx = new AC(); await ctx.resume();
-  const src = ctx.createMediaStreamSource(mic); hf.an = ctx.createAnalyser(); hf.an.fftSize = 1024; src.connect(hf.an);
-  hf.buf = new Float32Array(hf.an.fftSize); hf.on = true; hf.sp = hf.si = 0;
-  micBtn.classList.add("hf"); toast("Hands-free on: just talk. Double-tap 🎤 to stop.");
-  speakReplies = true; $("speakopt").checked = true; pref("iriis_speak", "1"); $("speakbtn").textContent = "🔊";
-  clearInterval(hf.timer); hf.timer = setInterval(async () => {
-    if (!hf.on) return;
-    hf.an.getFloatTimeDomainData(hf.buf); let s = 0; for (const v of hf.buf) s += v * v; const rms = Math.sqrt(s / hf.buf.length);
-    const talking = (window.speechSynthesis && speechSynthesis.speaking) || playing;
-    const th = Math.max(0.015, hf.floor * (talking ? 6 : 3));
-    if (!rec && rms < th) hf.floor = hf.floor * 0.98 + rms * 0.02;
-    const voiced = rms > th;
-    if (!rec) { hf.sp = voiced ? hf.sp + 50 : 0; if (hf.sp >= 150 && !busy) { hf.t0 = Date.now(); if (talking) stopTalking(); if (await startRec()) micBtn.classList.add("rec"); } return; }
-    hf.si = voiced ? 0 : hf.si + 50;
-    if (hf.si >= 900 || Date.now() - hf.t0 > 15000) { micBtn.classList.remove("rec"); const t = await finishRec(); hf.sp = 0; if (t) send(t, { voice: true }); }
-  }, 50);
-}
-
-// ---------------------------------------------------------------- composer
 function resize() { box.style.height = "auto"; box.style.height = Math.min(box.scrollHeight, 140) + "px"; }
-function syncButtons() { const has = box.value.trim().length > 0; $("send").style.display = has ? "grid" : "none"; micBtn.style.display = has ? "none" : "grid"; }
-box.addEventListener("input", () => { resize(); syncButtons(); });
+box.addEventListener("input", () => { resize(); syncFab(); });
 box.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !matchMedia("(pointer: coarse)").matches) { e.preventDefault(); send(box.value); } });
-$("send").onclick = () => send(box.value);
 
-const SUGGEST = ["📷 Show you something",
-  "Brief me for today", "What's on my calendar?", "Any important emails?", "What's on my bench?",
-  "Chart my spending this month", "Remind me in 1 hour to call the supplier", "What can you do?", "Look into … and report back"];
-for (const s of SUGGEST) {
-  const c = document.createElement("button"); c.className = "chip"; c.textContent = s;
-  c.onclick = () => { if (s.startsWith("📷")) return openCamera(); if (s.includes("…")) { box.value = s.replace("…", ""); box.focus(); resize(); syncButtons(); } else send(s); };
-  $("chips").appendChild(c);
+// ---------------------------------------------------------------- voice call (hands-free)
+let callOpen = false, callMuted = false; const vad = { ctx: null, an: null, buf: null, floor: .01, sp: 0, si: 0, rec: null, chunks: [], t0: 0, timer: null };
+function callMode(m) { if (!callOpen) return; const c = $("call"); c.classList.toggle("speaking", m === "speaking"); c.classList.toggle("listening", m === "listening");
+  $("callstate").textContent = { speaking: "Speaking", listening: callMuted ? "Muted" : "Listening", thinking: "Thinking…", hearing: "Hearing you…" }[m] || m; }
+function callShow(who, text) { $("callsaid").innerHTML = `<small>${esc(who)}</small>${esc(text.length > 240 ? text.slice(-240) : text)}`; }
+async function openCall() {
+  unlockAudio();
+  try { await getMic(); } catch (e) { toast("Allow the microphone to talk to Iriis"); return; }
+  callOpen = true; $("call").classList.add("open"); callMode("listening"); callShow("", "Just talk. She'll answer out loud.");
+  const AC = window.AudioContext || window.webkitAudioContext; vad.ctx = vad.ctx || new AC(); await vad.ctx.resume().catch(() => {});
+  const src = vad.ctx.createMediaStreamSource(mic); vad.an = vad.ctx.createAnalyser(); vad.an.fftSize = 1024; src.connect(vad.an); vad.buf = new Float32Array(1024);
+  clearInterval(vad.timer); vad.timer = setInterval(vadTick, 50);
+  try { if ("wakeLock" in navigator) vad.lock = await navigator.wakeLock.request("screen"); } catch (e) {}
 }
+function closeCall() { callOpen = false; clearInterval(vad.timer); if (vad.rec?.state === "recording") vad.rec.stop(); voice.stop(); $("call").classList.remove("open", "speaking", "listening"); try { vad.lock?.release(); } catch (e) {} }
+function vadTick() {
+  if (!callOpen || !vad.an) return;
+  vad.an.getFloatTimeDomainData(vad.buf); let s = 0; for (const v of vad.buf) s += v * v; const rms = Math.sqrt(s / vad.buf.length);
+  $("call").style.setProperty("--lvl", Math.min(1, rms * 12).toFixed(2));
+  if (callMuted || busy) return;
+  const over = voice.speaking(), th = Math.max(.015, vad.floor * (over ? 6 : 3));
+  if (!vad.rec && rms < th) vad.floor = vad.floor * .98 + rms * .02;
+  const voiced = rms > th;
+  if (!vad.rec) { vad.sp = voiced ? vad.sp + 50 : 0; if (vad.sp >= 150) { if (over) voice.stop(); segStart(); } return; }
+  vad.si = voiced ? 0 : vad.si + 50;
+  if (vad.si >= 850 || performance.now() - vad.t0 > 15000) vad.rec.stop();
+}
+function segStart() {
+  const type = recType(); try { vad.rec = new MediaRecorder(mic, type ? { mimeType: type } : undefined); } catch (e) { vad.rec = null; return; }
+  vad.chunks = []; vad.t0 = performance.now(); vad.si = 0; callMode("hearing");
+  vad.rec.ondataavailable = (e) => e.data.size && vad.chunks.push(e.data);
+  vad.rec.onstop = async () => {
+    const dur = performance.now() - vad.t0, blob = new Blob(vad.chunks, { type: vad.rec.mimeType || "audio/webm" }); vad.rec = null; vad.sp = 0;
+    if (!callOpen) return; if (dur < 600) { callMode("listening"); return; }
+    callMode("thinking"); const t = await transcribe(blob);
+    if (!t) { callMode("listening"); return; }
+    callShow("You", t); if (!serverVoice) voice.say("Mm-hm.");
+    await send(t, { voice: true });
+    if (!voice.speaking()) callMode("listening");
+  };
+  vad.rec.start(250);
+}
+$("callbtn").onclick = openCall;
+$("callend").onclick = closeCall;
+$("callmute").onclick = () => { callMuted = !callMuted; $("callmute").classList.toggle("off", callMuted); $("callmuteicon").innerHTML = `<use href="#i-${callMuted ? "micoff" : "mic"}"/>`; callMode("listening"); };
+$("callspk").onclick = () => { serverVoice = !serverVoice; pref("iriis_server_voice", serverVoice ? "1" : "0"); $("servervoice").checked = serverVoice; $("callspk").classList.toggle("off", serverVoice); toast(serverVoice ? "Her own voice" : "Phone voice"); };
+$("callvid").onclick = () => { closeCall(); openCamera(); };
 
-// ---------------------------------------------------------------- camera: she sees through your phone and guides you
+// ---------------------------------------------------------------- video call (camera mode, via Seryn Vision)
 async function openCamera() {
-  try {
-    const st = await (await fetch("/v1/camera/status")).json();
-    if (!st.connected) { toast(st.why || "The camera assistant isn't connected yet."); return; }
-  } catch (e) { toast("Couldn't reach Iriis."); return; }
-  if (!window.SerynCamera) {
-    await new Promise((res, rej) => { const s = document.createElement("script"); s.src = "/app/camera.js"; s.onload = res; s.onerror = rej; document.head.appendChild(s); })
-      .catch(() => toast("Couldn't load the camera."));
-  }
-  stopTalking(); if (hf.on) handsFree(false);
-  window.SerynCamera.open({ ws: "/v1/camera", api: "/v1/bench", stt: "/v1/stt", title: "Iriis · camera", onClose: () => loadHistory() });
+  try { const st = await (await fetch("/v1/camera/status")).json(); if (!st.connected) { toast(st.why || "The camera assistant isn't connected yet", 6000); return; } }
+  catch (e) { toast("Couldn't reach Iriis"); return; }
+  if (!window.SerynCamera) await new Promise((res) => { const s = document.createElement("script"); s.src = "/app/camera.js"; s.onload = res; s.onerror = res; document.head.appendChild(s); });
+  if (!window.SerynCamera) { toast("Couldn't load the camera"); return; }
+  voice.stop();
+  window.SerynCamera.open({ ws: "/v1/camera", api: "/v1/bench", stt: "/v1/stt", title: "Iriis", onClose: () => loadHistory() });
 }
-$("cambtn").onclick = openCamera;
+$("vidbtn").onclick = openCamera; $("cambtn2").onclick = openCamera;
 
-// ---------------------------------------------------------------- drawer: tasks, status, settings, guide
-function openDrawer(tab) { $("drawer").classList.add("open"); showTab(tab || "tasks"); }
-$("menubtn").onclick = () => openDrawer();
-$("closebtn").onclick = () => $("drawer").classList.remove("open");
-$("drawer").onclick = (e) => { if (e.target.id === "drawer") $("drawer").classList.remove("open"); };
-document.querySelectorAll(".tabs button").forEach((b) => b.onclick = () => showTab(b.dataset.tab));
-function showTab(t) {
-  document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === t));
-  for (const x of ["tasks", "status", "settings", "help"]) $("tab-" + x).hidden = x !== t;
-  if (t === "tasks") loadTasks(); if (t === "status") loadStatus();
-}
-const NICE = { scheduled: "scheduled", running: "working on it", done: "done", failed: "failed", cancelled: "cancelled" };
-function when(ts) { if (!ts) return ""; const d = new Date(ts * 1000); return d.toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" }); }
-async function loadTasks(quiet) {
-  let items = [];
-  try { const r = await fetch("/v1/tasks"); if (!r.ok) return; items = await r.json(); } catch (e) { return; }
-  const el = $("tab-tasks"); el.innerHTML = "";
-  const sec = document.createElement("div"); sec.className = "sec";
-  sec.innerHTML = `<h3>Tasks & routines</h3>${items.length ? "" : '<p class="muted">No tasks yet. Ask "Look into … and report back", or "Every weekday at 7, brief me".</p>'}`;
-  for (const t of items.slice(0, 40)) {
-    const d = document.createElement("div"); d.className = "task";
-    const rep = t.repeat ? ` · repeats ${esc(t.repeat.replace(/^every (\d+)s$/, (m, s) => "every " + (s >= 3600 ? s / 3600 + " h" : s / 60 + " min")))}` : "";
-    d.innerHTML = `<div style="display:flex;justify-content:space-between;gap:8px"><b>${esc(t.title)}</b><span class="badge ${t.status}">${NICE[t.status] || t.status}</span></div>
-      <div class="muted">${t.status === "scheduled" && t.next_run ? "next " + when(t.next_run) : t.last_run ? "ran " + when(t.last_run) : ""}${rep}</div>`;
-    if (t.result) { const p = document.createElement("details"); p.innerHTML = `<summary class="muted">Report</summary><div style="white-space:pre-wrap;margin-top:6px">${linkify(t.result)}</div>`; d.appendChild(p); }
-    const row = document.createElement("div"); row.style.cssText = "display:flex;gap:8px;margin-top:6px";
-    if (["scheduled", "failed", "done"].includes(t.status) && t.repeat || t.status === "failed") {
-      const b = document.createElement("button"); b.className = "btn ghost"; b.textContent = "Run now";
-      b.onclick = async () => { await fetch(`/v1/tasks/${t.id}/run`, { method: "POST" }); toast("Started"); loadTasks(); }; row.appendChild(b);
+// ---------------------------------------------------------------- menu + pages
+$("menubtn").onclick = (e) => { e.stopPropagation(); $("menu").classList.toggle("open"); };
+document.addEventListener("click", () => $("menu").classList.remove("open"));
+document.querySelectorAll("[data-page]").forEach((b) => b.onclick = () => openPage(b.dataset.page));
+document.querySelectorAll("[data-close]").forEach((b) => b.onclick = () => b.closest(".page").classList.remove("open"));
+function openPage(p) { $("page-" + p).classList.add("open"); if (p === "tasks") loadTasks(); if (p === "status") loadStatus(); history.pushState({ p }, ""); }
+window.addEventListener("popstate", () => { document.querySelectorAll(".page.open").forEach((x) => x.classList.remove("open")); if (callOpen) closeCall(); });
+
+const NICE = { scheduled: "scheduled", running: "working", done: "done", failed: "failed", cancelled: "stopped" };
+const when = (ts) => ts ? new Date(ts * 1000).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "";
+const repeatText = (r) => !r ? "" : r.startsWith("every ") ? (() => { const s = +r.slice(6, -1); return "every " + (s >= 3600 ? s / 3600 + " h" : s / 60 + " min"); })() : r;
+async function loadTasks() {
+  const el = $("tasks"); let items = [];
+  try { const r = await fetch("/v1/tasks"); items = await r.json(); } catch (e) { el.innerHTML = '<div class="item"><div class="t"><small>Couldn\'t load tasks.</small></div></div>'; return; }
+  if (!items.length) { el.innerHTML = '<div class="guide"><p>No tasks yet.</p><p style="color:var(--meta)">Try: "Look into the best chest freezers in Nairobi and report back", or "Every weekday at 7am, brief me on my calendar and email."</p></div>'; return; }
+  el.innerHTML = "";
+  const groups = [["Running and scheduled", (t) => ["running", "scheduled"].includes(t.status)], ["Finished", (t) => !["running", "scheduled"].includes(t.status)]];
+  for (const [title, f] of groups) {
+    const list = items.filter(f); if (!list.length) continue;
+    el.insertAdjacentHTML("beforeend", `<div class="sect">${title}</div>`);
+    for (const t of list) {
+      const it = document.createElement("div"); it.className = "item click"; it.style.flexWrap = "wrap";
+      const sub = t.status === "scheduled" && t.next_run ? "next " + when(t.next_run) : t.last_run ? "ran " + when(t.last_run) : "";
+      it.innerHTML = `<div class="ic"><svg class="i"><use href="#i-task"/></svg></div><div class="t"><b>${esc(t.title)}</b><small>${esc([sub, repeatText(t.repeat)].filter(Boolean).join(" · "))}</small></div><span class="tag ${t.status}">${NICE[t.status] || t.status}</span>`;
+      const det = document.createElement("div"); det.style.cssText = "flex-basis:100%;display:none"; it.appendChild(det);
+      it.onclick = (e) => { if (e.target.closest("button")) return; det.style.display = det.style.display === "none" ? "block" : "none"; };
+      det.innerHTML = `<div class="report">${t.result ? linkify(t.result) : '<span style="color:var(--meta)">No report yet.</span>'}</div>`;
+      const acts = document.createElement("div"); acts.style.cssText = "display:flex;gap:8px;padding:0 18px 6px";
+      if (t.repeat || t.status === "failed") { const b = document.createElement("button"); b.className = "smallbtn"; b.textContent = "Run now"; b.onclick = async () => { await fetch(`/v1/tasks/${t.id}/run`, { method: "POST" }); toast("Started"); loadTasks(); }; acts.appendChild(b); }
+      if (["scheduled", "running"].includes(t.status)) { const b = document.createElement("button"); b.className = "smallbtn"; b.textContent = "Stop"; b.onclick = async () => { await fetch(`/v1/tasks/${t.id}/cancel`, { method: "POST" }); toast("Stopped"); loadTasks(); }; acts.appendChild(b); }
+      det.appendChild(acts); el.appendChild(it);
     }
-    if (["scheduled", "running"].includes(t.status)) {
-      const b = document.createElement("button"); b.className = "btn ghost"; b.textContent = "Stop";
-      b.onclick = async () => { await fetch(`/v1/tasks/${t.id}/cancel`, { method: "POST" }); toast("Stopped"); loadTasks(); }; row.appendChild(b);
-    }
-    if (row.childNodes.length) d.appendChild(row);
-    sec.appendChild(d);
   }
-  el.appendChild(sec);
 }
-const SKILLS = { time_and_calc: "Time & maths", notes_reminders: "Notes & reminders", memory: "Memory", web: "Web search",
-  seryn: "Seryn Twin", tasks: "Background tasks", google: "Gmail & Calendar", money: "Money", self: "Knows herself",
-  studio: "Charts & documents", bench: "Bench camera" };
+const SKILLS = { time_and_calc: "Time and maths", notes_reminders: "Notes and reminders", memory: "Memory", web: "Web search", seryn: "Seryn Twin",
+  tasks: "Background tasks", google: "Gmail and Calendar", money: "Money", self: "Knows herself", studio: "Charts and documents", bench: "Bench camera" };
 async function loadStatus() {
-  const el = $("tab-status");
+  const el = $("statusbody");
   try {
-    const r = await fetch("/v1/status"); if (!r.ok) throw 0; const d = await r.json();
-    const skills = Object.entries(d.cloud_servers || {}).map(([k, v]) =>
-      `<div class="skill"><span>${SKILLS[k] || k}</span><span>${v === "ok" ? "✅" : "⚠️ " + esc(String(v).slice(0, 60))}</span></div>`).join("");
-    el.innerHTML = `<div class="sec"><h3>Connection</h3>
-      <div class="skill"><span>Brain</span><span>✅ ${esc(d.llm?.model || "")}</span></div>
-      <div class="skill"><span>Your computer</span><span>${d.desktop_connected ? "✅ connected" : "⚪ offline (files, browser, terminal unavailable)"}</span></div>
-      <div class="skill"><span>Telegram</span><span>${d.telegram?.enabled ? "✅ on" : "⚪ off"}</span></div>
-      <div class="skill"><span>Voice</span><span>${esc(d.tts || "")}</span></div></div>
-      <div class="sec"><h3>Skills</h3>${skills}${!("bench" in (d.cloud_servers || {})) ? '<div class="skill"><span>Bench camera</span><span>⚪ not connected</span></div>' : ""}</div>`;
-  } catch (e) { el.innerHTML = '<div class="sec"><p class="muted">Couldn\'t load the status.</p></div>'; }
+    const d = await (await fetch("/v1/status")).json(); const cs = d.cloud_servers || {};
+    const row = (name, ok, sub) => `<div class="item"><div class="t"><b>${esc(name)}</b><small>${esc(sub || "")}</small></div><span class="tag ${ok ? "done" : "failed"}">${ok ? "working" : "off"}</span></div>`;
+    el.innerHTML = '<div class="sect">Connection</div>' + row("Brain", true, d.llm?.model) +
+      row("Your computer", d.desktop_connected, d.desktop_connected ? "files, browser, terminal" : "start it with: iriis start") +
+      row("Telegram", d.telegram?.enabled, "") + row("Voice", true, d.tts || "") +
+      '<div class="sect">Skills</div>' + Object.entries(cs).map(([k, v]) => row(SKILLS[k] || k, v === "ok", v === "ok" ? "" : String(v).slice(0, 80))).join("") +
+      ("bench" in cs ? "" : row("Bench camera", false, "add VISION_MCP_URL and VISION_ACCESS_KEY on Railway"));
+  } catch (e) { el.innerHTML = '<div class="item"><div class="t"><small>Couldn\'t load the status.</small></div></div>'; }
 }
-$("tab-help").innerHTML = `<div class="sec"><h3>Getting started</h3><ol>
-  <li><b>Show her things:</b> tap 📷 (top right). She sees through your camera; just talk ("is this the right one?", "what does it read?"). Tap 🧭 Coach and she speaks up by herself when something's off. ⏪ tells you what you just did; ⏺ records and reviews a video.</li>
-  <li><b>Just type or talk.</b> Hold 🎤 to say something; let go to send. <b>Double-tap 🎤</b> for hands-free: talk naturally and she answers out loud.</li>
-  <li><b>Tap a suggestion</b> above the message box to see what she can do.</li>
-  <li><b>When she asks "Shall I…?"</b> tap <b>Yes</b>, <b>No</b>, or <b>Yes to all</b> (no more questions for that kind of action for 10 minutes). She always asks before sending, buying, deleting or changing things.</li>
-  <li><b>Big jobs run in the background:</b> "Look into the best chest freezers in Nairobi and report back." Watch progress under ☰ → Tasks.</li>
-  <li><b>Routines:</b> "Every weekday at 7am, brief me on my calendar, email and the weather."</li>
-  <li><b>Turn on notifications</b> (☰ → Settings) so reminders and finished tasks reach your lock screen.</li>
-  <li><b>Install the app</b> (☰ → Settings → Install): it opens full screen like WhatsApp.</li></ol></div>
-  <div class="sec"><h3>Things to try</h3><ol>
-  <li>"What's on my calendar tomorrow?" · "Any important emails today? Draft a reply to the supplier."</li>
-  <li>"Log KES 450 lunch" · paste M-Pesa messages: "log these as Seryn" · "How much did I spend on transport this month?"</li>
-  <li>"Chart my spending this month" · "Make a one-page PDF update for Seryn" (files appear right here).</li>
-  <li>"What should I mix for a 12 °C pack?" · "How long will 4 packs hold tomatoes?" (Seryn Twin)</li>
-  <li>"What's on my bench right now?" · "What did I just do?" · "Coach me" (bench camera)</li>
-  <li>"What's open in Brave?" · "Read my latest WhatsApp messages" · "Find the budget spreadsheet" (needs your PC on)</li>
-  <li>"Remember I prefer morning meetings" · "What did I say about the HDPE supplier?"</li></ol></div>
-  <div class="sec"><h3>Good to know</h3><ol>
-  <li>This app, voice ("Hey Jarvis"), the terminal and Telegram all reach the same Iriis.</li>
-  <li>Your computer gives her files, the browser and the terminal; everything else works with it off.</li>
-  <li>"Start over" (☰ → Settings) clears this conversation's context; your notes, tasks and memories stay.</li></ol></div>`;
+$("guide").innerHTML = `
+  <h3>Chat like WhatsApp</h3><ol>
+  <li><b>Type</b> and tap the green arrow, or <b>hold the green mic</b> to send a voice message (slide left to cancel). She answers voice messages out loud.</li>
+  <li>When she asks <b>"Shall I…?"</b> tap <b>Yes</b>, <b>No</b> or <b>Yes to all</b>. She always asks before sending, buying, deleting or changing things.</li>
+  <li>Charts and documents she makes appear in the chat; tap to open.</li></ol>
+  <h3>Call her</h3><ol>
+  <li><b>Voice call</b> (phone icon at the top): talk hands-free like a phone call. Interrupt her any time by speaking.</li>
+  <li><b>Video call</b> (camera icon): she sees through your camera. Ask "what does this read?", "is this the right one?", "what next?". Tap <b>Coach</b> and she speaks up by herself when something's wrong.</li></ol>
+  <h3>Let her work for you</h3><ol>
+  <li>"Look into … and report back": she works in the background; see <b>⋮ → Tasks & routines</b>.</li>
+  <li>"Every weekday at 7am, brief me on my calendar, email and the weather": a routine.</li>
+  <li>Turn on <b>notifications</b> (⋮ → Settings) so reminders and finished tasks reach your lock screen.</li></ol>
+  <h3>Things to try</h3><ol>
+  <li>"What's on my calendar tomorrow?" · "Any important emails? Draft a reply to the supplier."</li>
+  <li>"Log 450 for lunch" · paste M-Pesa messages: "log these as Seryn" · "Chart my spending this month"</li>
+  <li>"What should I mix for a 12 °C pack?" · "How long will 4 packs hold tomatoes?"</li>
+  <li>"What's open in Brave?" · "Read my latest WhatsApp messages" (needs your computer on)</li></ol>
+  <h3>Install</h3><ol><li>Android: ⋮ → Settings → Install. iPhone: Safari → Share → Add to Home Screen.</li></ol>`;
 
 // settings
-speakReplies = pref("iriis_speak") === "1"; serverVoice = pref("iriis_server_voice") === "1";
-$("speakopt").checked = speakReplies; $("servervoice").checked = serverVoice; $("speakbtn").textContent = speakReplies ? "🔊" : "🔈";
-$("speakopt").onchange = () => { speakReplies = $("speakopt").checked; pref("iriis_speak", speakReplies ? "1" : "0"); $("speakbtn").textContent = speakReplies ? "🔊" : "🔈"; };
+$("speakopt").checked = speakReplies; $("servervoice").checked = serverVoice; $("callspk").classList.toggle("off", serverVoice);
+$("speakopt").onchange = () => { speakReplies = $("speakopt").checked; pref("iriis_speak", speakReplies ? "1" : "0"); };
 $("servervoice").onchange = () => { serverVoice = $("servervoice").checked; pref("iriis_server_voice", serverVoice ? "1" : "0"); };
-$("speakbtn").onclick = () => { $("speakopt").checked = !$("speakopt").checked; $("speakopt").onchange(); if (!speakReplies) stopTalking(); toast(speakReplies ? "She'll read replies aloud" : "Replies are silent"); };
 const theme = pref("iriis_theme") || ""; $("theme").value = theme; if (theme) document.documentElement.dataset.theme = theme;
-$("theme").onchange = () => { pref("iriis_theme", $("theme").value); if ($("theme").value) document.documentElement.dataset.theme = $("theme").value; else delete document.documentElement.dataset.theme; };
+$("theme").onchange = () => { const v = $("theme").value; pref("iriis_theme", v); if (v) document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; };
 $("newchat").onclick = async () => {
-  if (!confirm("Start a new conversation? Notes, tasks and memories stay.")) return;
+  if (!confirm("Start a new conversation? Your notes, tasks and memories stay.")) return;
   await fetch(`/v1/sessions/${SESSION}`, { method: "DELETE" }).catch(() => {});
-  chat.innerHTML = ""; lastDay = ""; welcome(); $("drawer").classList.remove("open");
+  chat.innerHTML = ""; lastDay = ""; lastRole = ""; noteLine("New conversation. Your notes, tasks and memories are still here.");
 };
 
-// ---------------------------------------------------------------- notifications + install
-function b64ToBytes(b) { const p = "=".repeat((4 - b.length % 4) % 4); const s = atob((b + p).replace(/-/g, "+").replace(/_/g, "/")); return Uint8Array.from(s, (c) => c.charCodeAt(0)); }
-async function pushOn() {
-  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
-    $("pushstate").textContent = /iPhone|iPad/.test(navigator.userAgent) ? "On iPhone: first add Iriis to the Home Screen (Share → Add to Home Screen), open it from there, then turn this on." : "This browser doesn't support notifications.";
-    return;
-  }
-  const perm = await Notification.requestPermission();
-  if (perm !== "granted") { $("pushstate").textContent = "Notifications are blocked. Allow them for this site in the browser settings."; return; }
-  const reg = await navigator.serviceWorker.ready;
-  const { key } = await (await fetch("/v1/push/key")).json();
-  const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(key) });
-  await fetch("/v1/push/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(sub) });
-  $("pushstate").textContent = "✅ Notifications are on for this device."; pref("iriis_push", "1");
-}
-$("pushon").onclick = () => pushOn().catch((e) => $("pushstate").textContent = "Couldn't turn them on: " + e.message);
-$("pushtest").onclick = async () => { const j = await (await fetch("/v1/push/test", { method: "POST" })).json(); toast(j.sent ? "Test sent" : "No device has notifications on yet"); };
-if (pref("iriis_push") === "1") $("pushstate").textContent = "✅ Notifications are on for this device.";
-
+// notifications + install
+const b64ToBytes = (b) => { const p = "=".repeat((4 - b.length % 4) % 4); const s = atob((b + p).replace(/-/g, "+").replace(/_/g, "/")); return Uint8Array.from(s, (c) => c.charCodeAt(0)); };
+$("pushon").onclick = async () => {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) { $("pushstate").textContent = /iPhone|iPad/.test(navigator.userAgent) ? "On iPhone, add Iriis to the Home Screen first (Share → Add to Home Screen), then open it from there." : "This browser doesn't support notifications."; return; }
+  try {
+    if (await Notification.requestPermission() !== "granted") { $("pushstate").textContent = "Blocked: allow notifications for this site in the browser settings."; return; }
+    const reg = await navigator.serviceWorker.ready, { key } = await (await fetch("/v1/push/key")).json();
+    const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(key) });
+    await fetch("/v1/push/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(sub) });
+    pref("iriis_push", "1"); $("pushstate").textContent = "On for this device"; $("pushon").textContent = "On";
+  } catch (e) { $("pushstate").textContent = "Couldn't turn them on: " + e.message; }
+};
+$("pushtest").onclick = async () => { const j = await (await fetch("/v1/push/test", { method: "POST" })).json(); toast(j.sent ? "Test sent" : "Turn notifications on first"); };
+if (pref("iriis_push") === "1") { $("pushstate").textContent = "On for this device"; $("pushon").textContent = "On"; }
 let installEvt = null;
 window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installEvt = e; $("installbtn").hidden = false; });
 $("installbtn").onclick = async () => { if (installEvt) { installEvt.prompt(); installEvt = null; $("installbtn").hidden = true; } };
-$("installhelp").textContent = matchMedia("(display-mode: standalone)").matches ? "✅ Installed." :
-  /iPhone|iPad/.test(navigator.userAgent) ? "iPhone: tap Share → Add to Home Screen." : "Android/desktop: tap Install below, or the browser menu → Install app.";
+$("installhelp").textContent = matchMedia("(display-mode: standalone)").matches ? "Installed" : /iPhone|iPad/.test(navigator.userAgent) ? "Safari → Share → Add to Home Screen" : "Opens full screen, like WhatsApp";
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/app/sw.js", { scope: "/app" }).catch(() => {});
 
-// ---------------------------------------------------------------- presence
+// presence
 async function presence() {
-  try {
-    const r = await fetch("/v1/status"); if (r.status === 401) { location.href = "/app/login"; return; }
-    const d = await r.json();
-    $("dot").className = "dot " + (d.desktop_connected ? "on" : "mid");
-    $("sub").textContent = d.desktop_connected ? "online · your computer is connected" : "online · your computer is offline";
-  } catch (e) { $("dot").className = "dot"; $("sub").textContent = navigator.onLine ? "reconnecting…" : "you're offline"; }
+  try { const r = await fetch("/v1/status"); if (r.status === 401) { location.href = "/app/login"; return; } const d = await r.json(); online = true; desktop = !!d.desktop_connected; }
+  catch (e) { online = false; }
+  if (!busy) idleStatus();
 }
-window.addEventListener("online", presence); window.addEventListener("offline", presence);
-document.addEventListener("visibilitychange", () => { if (!document.hidden) { presence(); } });
-if (!pref("iriis_seen_guide")) { pref("iriis_seen_guide", "1"); setTimeout(() => openDrawer("help"), 600); }
-loadHistory(); presence(); setInterval(presence, 30000); syncButtons();
+window.addEventListener("online", presence); window.addEventListener("offline", () => { online = false; idleStatus(); });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) presence(); });
+if (!pref("iriis_seen_guide2")) { pref("iriis_seen_guide2", "1"); setTimeout(() => openPage("guide"), 500); }
+loadHistory(); presence(); setInterval(presence, 30000); syncFab();
 </script>
 </body>
 </html>

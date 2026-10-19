@@ -108,6 +108,7 @@
     let recorder = null, recChunks = [], mic = null, coachOn = false, lastQ = null, listening = true;
     const peers = {}, ICE = [{ urls: ["stun:stun.l.google.com:19302", "stun:stun.cloudflare.com:3478"] }];
 
+    let slow = false;
     const sub = (t) => { $(root, ".sc-sub").textContent = t; };
     function fatal(text) { $(root, ".sc-msgtext").textContent = text; $(root, ".sc-msg").style.display = "grid"; }
     function badge(status, text) { const b = $(root, ".sc-badge"); b.className = "sc-badge sc-" + status; b.textContent = text; b.style.display = "block";
@@ -210,7 +211,9 @@
         if (dur < 600) return;
         const f = new FormData(); f.append("file", new Blob(vad.chunks, { type: mime }), "q." + (mime.includes("mp4") ? "mp4" : mime.includes("ogg") ? "ogg" : "webm"));
         try { const r = await fetch(o.stt, { method: "POST", body: f, credentials: "same-origin" }); const j = await r.json(); const t = (j.text || "").trim();
-          if (r.ok && t.length > 1 && !/^(thank you\.?|thanks for watching\.?|you\.?|\.+)$/i.test(t)) ask(t, true); } catch (e) {}
+          if (r.ok && t.length > 1 && !/^(thank you\.?|thanks for watching\.?|you\.?|\.+)$/i.test(t)) ask(t, true);
+          else if (!r.ok) badge("unsure", `Couldn't hear that (voice error ${r.status}). Type below instead.`);
+        } catch (e) { badge("unsure", "Couldn't send your voice: no connection"); }
       };
       vad.rec.start(250);
     }
@@ -222,7 +225,7 @@
       if (!text) return;
       if (thinking) { if (byVoice) say("One moment."); return; }
       if (!send({ type: "ask", text })) return;
-      cap("me", text); lastQ = thinkingCap(); if (byVoice) say("Let me look.");
+      cap("me", text); lastQ = thinkingCap(); if (byVoice || slow) say(slow ? "Let me look. This takes a minute or two." : "Let me look.");
     }
     function connect() {
       const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -239,7 +242,11 @@
     }
     function handle(m) {
       switch (m.type) {
-        case "hello": sub(m.ready ? "ready · just talk" : `model not ready: ${m.note || ""}`); fillProcs(m.procedures || []); break;
+        case "hello":
+          slow = m.ready && !/^fast/.test(m.note || "");
+          sub(!m.ready ? `model not ready: ${m.note || ""}` : slow ? "slow mode · answers take 1–2 min" : "ready · just talk");
+          if (slow) badge("unsure", "Slow mode: no GROQ_API_KEY or GEMINI_API_KEY on the vision server, so answers take 1–2 minutes");
+          fillProcs(m.procedures || []); break;
         case "frame_ack": waitingAck = false; clearTimeout(ackTimer); break;
         case "perception": detections = [...(m.detections || [])];
           if (m.reading) { const c = $(root, ".sc-chip"); c.textContent = `${(+m.reading.value).toFixed(1)} ${m.reading.unit || ""}`; c.style.display = "block";
