@@ -52,7 +52,7 @@ STOP = set("the a an and or but to of in on at for with is are was were be been 
 MAX_CALLS_PER_DAY = int(os.environ.get("IRIIS_MAX_AUTONOMOUS_CALLS", "4"))
 MAX_MESSAGES_PER_DAY = int(os.environ.get("IRIIS_MAX_AUTONOMOUS_MESSAGES", "8"))
 MAX_EMERGENCIES_PER_DAY = 2
-SKIP_SESSIONS = ("task-", "mind", "mcp")
+SKIP_SESSIONS = ("task-", "mind", "mcp", "ops-")      # ops-*: health checks, not real conversations
 
 
 def words(text: str) -> set[str]:
