@@ -483,10 +483,10 @@ def vision_describe(images: list[bytes], question: str, max_tokens: int = 700) -
     """Ask a vision model about pictures: Gemini (free tier) first, then Groq. Both are OpenAI-compatible."""
     providers = []
     if os.environ.get("GEMINI_API_KEY"):
-        providers.append(("https://generativelanguage.googleapis.com/v1beta/openai", os.environ["GEMINI_API_KEY"],
+        providers.append(("https://generativelanguage.googleapis.com/v1beta/openai", "".join(os.environ["GEMINI_API_KEY"].split()),
                           os.environ.get("GEMINI_VISION_MODEL", "gemini-2.5-flash"), 8))
     if os.environ.get("GROQ_API_KEY"):
-        providers.append(("https://api.groq.com/openai/v1", os.environ["GROQ_API_KEY"],
+        providers.append(("https://api.groq.com/openai/v1", "".join(os.environ["GROQ_API_KEY"].split()),
                           os.environ.get("GROQ_VISION_MODEL", "qwen/qwen3.8-27b"), 3))
     if not providers:
         raise ValueError("No vision model is configured (GEMINI_API_KEY or GROQ_API_KEY).")
