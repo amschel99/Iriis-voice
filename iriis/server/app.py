@@ -437,9 +437,24 @@ def create_app(cfg: Config | None = None) -> FastAPI:
 
         def load():
             rows = core.mind.rows(kinds, 400)
-            return {"mood": core.mind.mood(),
+            return {"mood": core.mind.mood(), "persona": core.mind.persona(), "plan": core.mind.agenda.plan(),
                     "items": [{"id": r[0], "kind": r[1], "text": r[2], "importance": r[3], "created": r[4]} for r in rows]}
         return await asyncio.to_thread(load)
+
+    @app.get("/v1/training/export", dependencies=[Depends(require_key)])
+    async def training_export(request: Request):
+        """Every exchange with the user as training data: JSONL in chat format, one exchange per line, with feedback
+        signals (whether the next message corrected her). Her learned lessons and skills come last as notes."""
+        core: Core = request.app.state.core
+        from iriis.agent.agenda import training_records
+
+        def build() -> str:
+            recs = training_records(core.db)
+            notes = [{"note": r[1], "text": r[2]} for r in core.mind.rows(("lesson", "skill", "growth", "insight"), 1000)]
+            return "\n".join(json.dumps(x, ensure_ascii=False) for x in [*recs, *notes]) + "\n"
+        data = await asyncio.to_thread(build)
+        return Response(data, media_type="application/x-ndjson",
+                        headers={"Content-Disposition": 'attachment; filename="iriis-training.jsonl"'})
 
     @app.delete("/v1/mind/{item_id}", dependencies=[Depends(require_key)])
     async def mind_forget(item_id: int, request: Request):

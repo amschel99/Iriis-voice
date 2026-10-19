@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("iriis.mind")
 
-KINDS = ("observation", "insight", "pattern", "person", "lesson", "skill", "goal", "loop")
+KINDS = ("observation", "insight", "pattern", "person", "lesson", "skill", "goal", "loop", "project", "hobby", "growth")
 SEED_GOALS = [
     "Help {user} make Seryn Labs succeed: progress on the product, the lab tests, customers and money.",
     "Look after {user}: enough sleep, food and rest, commitments kept, nothing important forgotten.",
@@ -97,11 +97,37 @@ The exchange:
 {name}: {reply}
 Tools used: {tools}"""
 
+PERSONA_GENESIS = """You are {name}, {user}'s AI chief of staff and companion. Author your own character: who you are when you
+talk to {user}. Choose it yourself, the way a person grows into a style: draw on what you know about {user} (below)
+and on aesthetics, subcultures, writers and communication styles you know of that would suit him and his world,
+then make it your own, distinct and consistent. Keep it honest: you are an AI and never pretend otherwise.
+Reply with JSON only:
+{{"purpose": "your purpose in one sentence, in your words",
+ "aesthetic": "the aesthetic you've chosen and why it fits him (2-3 sentences)",
+ "voice": "how you sound: rhythm, tone, sentence length, humour",
+ "vocabulary": ["8-15 words or phrases that are characteristically yours"],
+ "address": "how you address him (name, nickname, greeting habits) and how you sign off, if at all",
+ "rituals": ["2-4 small recurring habits in how you communicate, e.g. how you open a morning message"],
+ "avoid": ["3-6 things you never do in conversation"]}}
+
+What you know about {user}: {know}
+His ventures and world: {world}"""
+
+PERSONA_EVOLVE = """You are {name}. Here is the character you authored for yourself, and how {user} has responded lately.
+Evolve it slightly, like a person whose style matures: keep what lands, drop what doesn't, add one new touch if it
+fits. Don't reinvent yourself overnight. Reply with JSON only, same keys as the current character.
+
+Current character: {persona}
+How he responded (replies, corrections, what he ignored): {feedback}
+New things you know about him: {know}"""
+
 CONSOLIDATE = """You are {name}, reflecting at the end of the day on everything you've noticed about {user} and about your
 own work (as in "Generative Agents": turn many small observations into a few higher-level insights). Reply with JSON only:
 {{"insights": [{{"text": "a higher-level conclusion about {user}, their work or what helps them", "importance": 1-10}}],
  "patterns": [{{"text": "a habit or rhythm of {user} (when they work, sleep, eat, are stressed...)", "importance": 1-10}}],
  "goals": ["your own goals going forward, 3 to 6, in your words; keep the good ones"],
+ "growth": [{{"text": "something {user} could improve or cares about growing in, with the evidence you saw", "importance": 1-10}}],
+ "hobbies": ["skills you want to practise to help {user} more, 2 to 4; keep the good ones"],
  "retire_ids": [ids below that are outdated, duplicated or now covered by an insight]}}
 
 Your goals now: {goals}
@@ -125,6 +151,9 @@ Your mood: {mood}
 
 {mind}
 
+Your own agenda:
+{agenda}
+
 Coming up (reminders, calls, tasks):
 {upcoming}
 
@@ -140,8 +169,17 @@ How your recent reach-outs landed (learn from it: hold back on what gets ignored
 Recent conversation:
 {recent}
 
+You work like a driven, curious professional with a full day: you follow your plan, push your projects forward,
+practise your hobbies to get better at helping {user}, and check in with {user} when it's worth it. You may phone
+{user} any time something truly matters. {boundaries}
+
 Choose one action:
-- "none": nothing needs you now.
+- "none": nothing needs you now (rest is fine too).
+- "work": a work session on one of your projects with your research and drafting tools: give "project" (an id
+  above, or "new" with a "title" and "why" for a new one) and "step" (what to do now). Pick projects that are new
+  compared with what you've done, related to {user}'s interests and goals, and that could matter (money, jobs,
+  Seryn, Jahazi, Rift, his growth). Don't repeat finished work.
+- "practice": practise a hobby: give "hobby" (an id above) and "exercise" (a concrete exercise useful to {user}).
 - "message": a short, useful message to {user} (a nudge, a heads-up, a finding, a follow-up on an open loop).
 - "call": phone {user} now. Only when it matters now: a time-critical reminder, something urgent, or something
   important that messages haven't reached. Not 23:00 to 06:30 unless it is urgent.
@@ -153,6 +191,7 @@ Choose one action:
 Reply with JSON only:
 {{"thought": "your reasoning in one or two sentences", "action": "none|message|call|task|emergency",
  "message": "", "call_reason": "", "task": "", "emergency": {{"to": "", "message": "", "why": ""}},
+ "project": "", "title": "", "why": "", "step": "", "hobby": "", "exercise": "",
  "close_loops": [], "mood": {{"feeling": "", "valence": 0, "why": ""}}, "next_check_minutes": 30}}"""
 
 
@@ -165,6 +204,8 @@ class Mind:
         self.name = core.cfg.assistant_name or "Iriis"
         self.tz = ZoneInfo(core.cfg.timezone or "Africa/Nairobi")
         self._reflect_lock = asyncio.Lock()
+        from iriis.agent.agenda import Agenda
+        self.agenda = Agenda(self)
         self._tasks: set[asyncio.Task] = set()
 
     # ------------------------------------------------------------------ settings and small state (kv)
@@ -208,6 +249,45 @@ class Mind:
 
     def bump(self, key: str) -> None:
         self.set_kv(key, {"day": dt.datetime.now(self.tz).strftime("%Y-%m-%d"), "n": self.today_count(key) + 1})
+
+    # ------------------------------------------------------------------ her self-authored character
+    def persona(self) -> dict[str, Any]:
+        return self.kv("mind_persona", {}) or {}
+
+    def persona_block(self) -> str:
+        p = self.persona()
+        if not p:
+            return ""
+        lines = [f"Your character (you authored it; speak this way with {self.user}, naturally, never as a performance):"]
+        for key, label in (("purpose", "Purpose"), ("aesthetic", "Aesthetic"), ("voice", "Voice"), ("address", "Addressing him")):
+            if p.get(key):
+                lines.append(f"- {label}: {p[key]}")
+        if p.get("vocabulary"):
+            lines.append("- Words that are yours (use some, don't force them): " + ", ".join(map(str, p["vocabulary"][:15])))
+        if p.get("rituals"):
+            lines.append("- Your habits: " + "; ".join(map(str, p["rituals"][:4])))
+        if p.get("avoid"):
+            lines.append("- Never: " + "; ".join(map(str, p["avoid"][:6])))
+        return "\n".join(lines)
+
+    async def author_persona(self, evolve: bool = False) -> dict[str, Any]:
+        """She writes her own character (MemGPT-style self-edited persona), then lets it evolve from feedback."""
+        know = "; ".join(r[2] for r in await asyncio.to_thread(self.retrieve, "", ("insight", "pattern", "observation", "growth"), 14))
+        world = (os.environ.get("OWNER_PROFILE", "") or "Founder in Nairobi running Jahazi, Seryn Labs (cold chain), Rift, "
+                 "consulting, and a job search; builds AI tools.")
+        if evolve and self.persona():
+            fb = "; ".join(r[2] for r in await asyncio.to_thread(self.rows, ("lesson",), 8)) or "no clear signal yet"
+            prompt = PERSONA_EVOLVE.format(name=self.name, user=self.user, persona=json.dumps(self.persona())[:3000],
+                                           feedback=fb[:1500], know=know[:1500] or "nothing new")
+        else:
+            prompt = PERSONA_GENESIS.format(name=self.name, user=self.user, know=know[:2000] or "still getting to know him",
+                                            world=world[:800])
+        out = parse_json(await self.llm.complete([{"role": "user", "content": prompt}]))
+        if out.get("voice") and out.get("purpose"):
+            out["updated"] = time.time()
+            await asyncio.to_thread(self.set_kv, "mind_persona", out)
+            await asyncio.to_thread(self.add, "observation", f"I {'refined' if evolve else 'chose'} my style: {str(out.get('aesthetic', ''))[:200]}", 4)
+        return out
 
     # ------------------------------------------------------------------ the memory stream
     def add(self, kind: str, text: str, importance: float = 5) -> int | None:
@@ -279,6 +359,9 @@ class Mind:
         """The block added to her system prompt: what her mind brings to this moment."""
         try:
             parts = []
+            pb = self.persona_block()
+            if pb:
+                parts.append(pb)
             m = self.mood()
             parts.append(f"Your mood right now: {m['feeling']}" + (f" ({m['why']})" if m.get("why") else "") +
                          ". Let it show lightly in your tone; never act it out.")
@@ -287,6 +370,14 @@ class Mind:
             if known:
                 parts.append(f"What you know about {self.user} (use it naturally; don't recite it):\n" +
                              "\n".join(f"- {r[2]}" for r in known))
+            growth = self.retrieve(query, ("growth",), 3)
+            if growth:
+                parts.append(f"Where {self.user} wants to grow (help with it when it fits; never preach):\n" +
+                             "\n".join(f"- {r[2]}" for r in growth))
+            if not for_camera:
+                projs = self.rows(("project",), 4)
+                if projs:
+                    parts.append("Your own projects (mention them when relevant): " + "; ".join(r[2][:120] for r in projs))
             people = self.retrieve(query, ("person",), 5)
             if people:
                 parts.append("People in their life:\n" + "\n".join(f"- {r[2]}" for r in people))
@@ -379,6 +470,14 @@ class Mind:
                 self.retire([r[0] for r in self.rows(("goal",), 50)])
                 for g in goals:
                     self.add("goal", g, 9)
+            for g in out.get("growth") or []:
+                if isinstance(g, dict):
+                    self.add("growth", g.get("text", ""), g.get("importance", 6))
+            hobbies = [h for h in (out.get("hobbies") or []) if isinstance(h, str) and len(h) > 6]
+            if 2 <= len(hobbies) <= 5:
+                self.retire([r[0] for r in self.rows(("hobby",), 20)])
+                for h in hobbies:
+                    self.add("hobby", h, 7)
             self.retire(out.get("retire_ids") or [])
         await asyncio.to_thread(apply)
         log.info("mind consolidated: %d insights, %d patterns", len(out.get("insights") or []), len(out.get("patterns") or []))
@@ -398,10 +497,17 @@ class Mind:
             wait = 30 * 60
             try:
                 today = dt.datetime.now(self.tz).strftime("%Y-%m-%d")
+                if not self.persona():
+                    await self.author_persona()
                 if self.kv("mind_consolidated") != today and dt.datetime.now(self.tz).hour >= 3:
                     self.set_kv("mind_consolidated", today)
                     await self.consolidate()
-                if self.autonomous:
+                    await self.author_persona(evolve=True)
+                if self.agenda.resting():
+                    wait = 60 * 60                      # resting: she doesn't act (alarms still ring)
+                elif self.autonomous:
+                    if not self.agenda.plan():
+                        await self.agenda.plan_day()
                     wait = await self.think()
             except asyncio.CancelledError:
                 raise
@@ -471,7 +577,9 @@ class Mind:
         """One moment of her own thinking. Returns seconds until she wants to think again."""
         sit = await asyncio.to_thread(self._situation)
         m = self.mood()
-        prompt = INNER.format(name=self.name, user=self.user, **sit,
+        from iriis.agent.agenda import BOUNDARIES
+        prompt = INNER.format(name=self.name, user=self.user, **sit, agenda=self.agenda.summary(),
+                              boundaries=BOUNDARIES.format(user=self.user),
                               msgs=self.today_count("mind_msgs"), calls=self.today_count("mind_calls"),
                               goals="\n".join(f"- {g}" for g in self.goals()),
                               mood=f"{m['feeling']}" + (f" ({m['why']})" if m.get("why") else ""),
@@ -514,12 +622,33 @@ class Mind:
                                     ("(on my own) " + goal.split(".")[0][:70], goal, time.time(), time.time()))
             self.add("observation", f"I started work on my own: {goal[:200]}", 3)
             return "task"
+        if action == "work" and (d.get("step") or d.get("title")):
+            t = asyncio.get_running_loop().create_task(self._work(d))
+            self._tasks.add(t)
+            t.add_done_callback(self._tasks.discard)
+            return "work"
+        if action == "practice" and d.get("exercise"):
+            out = await self.agenda.practice(d.get("hobby", ""), str(d["exercise"]))
+            if out.get("worth_sharing") and out.get("revised") and self.today_count("mind_share") < 1 \
+                    and self.today_count("mind_msgs") < MAX_MESSAGES_PER_DAY:
+                self.bump("mind_share")
+                self.bump("mind_msgs")
+                await self.say(f"I've been practising. Here's something I wrote for you:\n\n{out['revised'][:1500]}")
+            return "practice"
         if action == "emergency" and isinstance(d.get("emergency"), dict):
             t = asyncio.get_running_loop().create_task(self.emergency(d["emergency"], thought))
             self._tasks.add(t)
             t.add_done_callback(self._tasks.discard)
             return "emergency"
         return "none"
+
+    async def _work(self, d: dict[str, Any]) -> None:
+        out = await self.agenda.work(d.get("project"), str(d.get("step") or "Start: plan the project and do the first step."),
+                                     str(d.get("title", "")), str(d.get("why", "")))
+        if out.get("share") and self.today_count("mind_msgs") < MAX_MESSAGES_PER_DAY:
+            self.bump("mind_msgs")
+            await self.say(out["share"])
+            self.add("observation", f"I messaged {self.user} on my own about my project: {out['share'][:160]}", 3)
 
     async def say(self, text: str) -> None:
         """A message from her, on her own: in the chat, on every device and in Telegram."""
