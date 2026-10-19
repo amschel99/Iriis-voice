@@ -93,8 +93,20 @@ def setup(require_key):
         return FileResponse(APP_DIR / "icon.svg", media_type="image/svg+xml", headers={"Cache-Control": "max-age=86400"})
 
     @router.get("/app/icon-{size}.png", include_in_schema=False)
-    async def icon_png(size: int):
-        return Response(_png_icon(min(max(size, 48), 512)), media_type="image/png", headers={"Cache-Control": "max-age=86400"})
+    async def icon_png(size: str):
+        f = APP_DIR / f"icon-{size}.png"           # 180, 192, 512, maskable-512 (the designed icon)
+        if f.is_file():
+            return FileResponse(f, media_type="image/png", headers={"Cache-Control": "max-age=86400"})
+        try:
+            n = int(size)
+        except ValueError:
+            raise HTTPException(404, "no such icon") from None
+        return Response(_png_icon(min(max(n, 48), 512)), media_type="image/png", headers={"Cache-Control": "max-age=86400"})
+
+    @router.get("/favicon.ico", include_in_schema=False)
+    @router.get("/app/favicon.ico", include_in_schema=False)
+    async def favicon():
+        return FileResponse(APP_DIR / "favicon.ico", media_type="image/x-icon", headers={"Cache-Control": "max-age=86400"})
 
     # ------------------------------------------------------------------ data for the app
     @router.get("/v1/history", dependencies=deps)
@@ -505,7 +517,7 @@ def _png_icon(size: int) -> bytes:
 
 LOGIN_HTML = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#0b1118">
-<title>Iriis</title><link rel="manifest" href="/app/manifest.webmanifest"><link rel="icon" href="/app/icon.svg">
+<title>Iriis</title><link rel="manifest" href="/app/manifest.webmanifest"><link rel="icon" href="/app/icon.svg" type="image/svg+xml"><link rel="icon" href="/app/favicon.ico" sizes="any"><link rel="apple-touch-icon" href="/app/icon-180.png">
 <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b1118;color:#e9eef4;
 font:16px system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}form{width:min(92vw,380px);display:grid;gap:14px;
 background:#121b26;border:1px solid #1f2b3a;border-radius:18px;padding:26px}h1{margin:0;font-size:24px}

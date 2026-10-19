@@ -9,8 +9,11 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Iriis">
 <link rel="manifest" href="/app/manifest.webmanifest">
-<link rel="icon" href="/app/icon.svg">
-<link rel="apple-touch-icon" href="/app/icon-192.png">
+
+
+<link rel="icon" href="/app/icon.svg" type="image/svg+xml">
+<link rel="icon" href="/app/favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="/app/icon-180.png">
 <title>Iriis</title>
 <style>
   /* WhatsApp-like palette (light / dark) */
@@ -43,7 +46,7 @@
   .bar { display:flex; align-items:center; gap:10px; background:var(--bar); color:var(--bar-text); padding:8px 6px 8px 12px;
          padding-top:max(8px, env(safe-area-inset-top)); min-height:58px; flex:none; }
   .ava { width:40px; height:40px; border-radius:50%; flex:none; display:grid; place-items:center; color:#fff; font-weight:600; font-size:18px;
-         background:linear-gradient(140deg,#25d366,#128c7e); }
+         background:#08201C url(/app/icon.svg) center/cover no-repeat; color:transparent; overflow:hidden; }
   .who { flex:1; min-width:0; } .who b { display:block; font-weight:600; font-size:17px; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .who small { display:block; font-size:13px; opacity:.85; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .ib { width:42px; height:42px; border-radius:50%; display:grid; place-items:center; flex:none; }
