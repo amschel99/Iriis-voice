@@ -107,8 +107,7 @@ class TaskRunner:
             if not repeat and previous:      # carrying on, or re-run by hand: start from what she already has
                 prompt += CONTINUE.format(notes=str(previous).removeprefix("[in progress] ")[:6000])
                 if runs >= 2:                  # research has a budget: from the third session, deliver
-                    prompt += ("
-[This is session " + str(runs + 1) + ". Stop researching: write the finished "
+                    prompt += ("\n[This is session " + str(runs + 1) + ". Stop researching: write the finished "
                                "deliverable now from your notes, filling a gap only if it's critical.]")
             try:
                 report = await asyncio.wait_for(self.run_fn(tid, prompt), self.timeout_s)
