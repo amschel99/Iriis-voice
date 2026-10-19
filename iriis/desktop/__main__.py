@@ -70,7 +70,14 @@ async def _main(args) -> None:
                     await asyncio.sleep(3)
         tasks.append(asyncio.create_task(voice_forever(), name="voice"))
     try:
-        await asyncio.gather(*tasks)
+        # The link only ends on its own when a newer desktop replaced it: then this whole copy stops
+        # (mic, speaker and tools too), so two copies never fight over the brain or the microphone.
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        for t in pending:
+            t.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+        for t in done:
+            t.result()
     finally:
         await agent.stop()
 

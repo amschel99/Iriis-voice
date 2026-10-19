@@ -110,3 +110,16 @@ def test_works_with_hub_offline_mode(monkeypatch):
     assert "from huggingface_hub" not in src and "import huggingface_hub" not in src
     g, api = make(monkeypatch)
     assert g.status() == "running" and g.endpoint == "me/iriis-orpheus"
+
+
+def test_replaced_link_is_not_reported_as_a_bad_token():
+    """Close code 4010 ("replaced by a newer desktop") contains "401" as text: it must not read as a token error."""
+    from websockets.exceptions import ConnectionClosedError
+    from websockets.frames import Close
+
+    from iriis.desktop.agent import REPLACED, close_code
+    replaced = ConnectionClosedError(Close(4010, "replaced by a newer desktop connection"), None)
+    bad_token = ConnectionClosedError(Close(4401, "unauthorised"), None)
+    assert close_code(replaced) == REPLACED
+    assert close_code(bad_token) == 4401
+    assert close_code(OSError("down")) is None

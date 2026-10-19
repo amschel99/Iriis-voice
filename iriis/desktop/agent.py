@@ -24,6 +24,19 @@ from iriis.envfile import to_ws
 from iriis.mcp_client.manager import MCPManager
 from iriis.ui.console import ConsoleUI
 
+REPLACED = 4010          # brain closes the older link when a newer desktop connects (server/desktop_bridge.py)
+
+
+def close_code(e: BaseException) -> int | None:
+    """WebSocket close code (or 4401 for an HTTP 401 at the handshake) from a websockets exception."""
+    rcvd = getattr(e, "rcvd", None)
+    if rcvd is not None and getattr(rcvd, "code", None) is not None:
+        return rcvd.code
+    resp = getattr(e, "response", None)
+    if resp is not None and getattr(resp, "status_code", None) == 401:
+        return 4401
+    return None
+
 log = logging.getLogger("iriis.desktop")
 STATUS_FILE = resolve_path("data/desktop_status.json")
 
@@ -141,7 +154,7 @@ class DesktopAgent:
         delay, ever_connected, announced_down = 1.0, False, False
         write_status(brain_url=base, connected=False, since=time.time(), last_error="starting")
         while True:
-            error = ""
+            error, code = "", None
             try:
                 async with connect(url, additional_headers=headers, ping_interval=25, ping_timeout=60,
                                    max_size=16 * 1024 * 1024) as ws:
@@ -154,14 +167,23 @@ class DesktopAgent:
                     ever_connected, announced_down, delay = True, False, 1.0
                     await self._serve(ws)
                     error = "the connection closed"
+                    code = ws.close_code
             except (OSError, asyncio.TimeoutError) as e:
                 error = f"brain not reachable ({e.__class__.__name__})"
             except Exception as e:  # noqa: BLE001  (ConnectionClosed, InvalidStatus, ...)
                 error = f"{e.__class__.__name__}: {e}"
-                if "4401" in str(e) or "401" in str(e):
+                code = close_code(e)
+                if code == 4401:
                     error = "the brain rejected my desktop token (check IRIIS_DESKTOP_TOKEN)"
             finally:
                 self.ws = None
+            if code == REPLACED:
+                # Another desktop agent (usually a second copy of Iriis on this PC) took the link. Reconnecting
+                # would kick it off again and the two would fight forever, so this older copy bows out.
+                self.connected = False
+                write_status(connected=False, since=time.time(), last_error="replaced by a newer desktop agent")
+                self.ui.warn("Another Iriis desktop took over the link (is Iriis running twice?); this copy is stopping.")
+                return
             was_connected, self.connected = self.connected, False
             write_status(connected=False, since=time.time(), last_error=error)
             self.ui.warn(f"Not connected: {error}; retrying in {delay:.0f} s")
