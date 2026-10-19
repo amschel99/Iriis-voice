@@ -25,6 +25,18 @@ CONNECT_TIMEOUT_S = 25.0
 CALL_TIMEOUT_S = 60.0
 
 
+def expand_env(env: dict[str, str]) -> dict[str, str]:
+    """A server's env from config with ${VARS} filled from this process (.env / Railway). Entries whose variable
+    isn't set are left out, so an optional key (e.g. TAVILY_API_KEY) simply isn't there."""
+    import os
+    out = {}
+    for k, v in env.items():
+        val = os.path.expandvars(str(v))
+        if "$" not in val and val != "":
+            out[k] = val
+    return out
+
+
 @dataclass
 class _Conn:
     cfg: MCPServerConfig
@@ -82,7 +94,8 @@ class MCPManager:
         else:
             import os
             command = os.path.expandvars(os.path.expanduser(command))
-        return StdioServerParameters(command=command, args=cfg.args, env={**self._base_env(), **cfg.env}, cwd=str(ROOT))
+        return StdioServerParameters(command=command, args=cfg.args, env={**self._base_env(), **expand_env(cfg.env)},
+                                     cwd=str(ROOT))
 
     async def _host(self, conn: _Conn) -> None:
         errlog = None

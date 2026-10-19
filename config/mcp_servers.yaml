@@ -101,12 +101,16 @@ mcpServers:
     description: Git repository status, history and diffs.
     keywords: [git, commit, branch, repo, repository, diff]
 
-  browser:               # Playwright MCP (Node.js): a real, visible Chrome she drives on your PC
+  browser:               # Playwright MCP (Node.js): drives the user's OWN Chrome through the Playwright Extension
     enabled: true
     needs_internet: true
     command: npx
-    # Its own browser profile: she is NOT logged into your accounts unless you log in inside her window.
-    args: ["-y", "@playwright/mcp@0.0.83", "--browser", "chrome", "--output-dir", "data/playwright"]
+    # Your everyday Chrome, with your logins (Gmail, WhatsApp Web...). One-time setup: install the "Playwright
+    # Extension" (chromewebstore.google.com/detail/playwright-extension/mmlmfjhmonkocbjadbfplnigmagldckm), open
+    # it, copy its token into .env as PLAYWRIGHT_MCP_EXTENSION_TOKEN (then she connects without asking each time).
+    # For a separate profile instead, replace "--extension" with "--browser", "chrome".
+    args: ["-y", "@playwright/mcp@0.0.83", "--extension", "--output-dir", "data/playwright"]
+    env: {PLAYWRIGHT_MCP_EXTENSION_TOKEN: "${PLAYWRIGHT_MCP_EXTENSION_TOKEN}"}
     tier: auto             # navigate, read, click, type, tabs...
     tools:
       browser_fill_form: confirm
@@ -123,6 +127,7 @@ mcpServers:
   web:                   # fast web search + page reading (no browser window, no API key)
     command: python
     args: ["-m", "servers.web"]
+    env: {TAVILY_API_KEY: "${TAVILY_API_KEY}", BRAVE_API_KEY: "${BRAVE_API_KEY}"}   # optional free tiers
     needs_internet: true
     tier: auto
     description: Search the web and read web pages as text - news, facts, prices, docs, anything current.

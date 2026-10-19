@@ -272,7 +272,7 @@ your computer off.
 | Skill | Where | How to turn it on |
 |---|---|---|
 | **Web search and reading** (`web`) | PC, and cloud when the PC is off | Nothing to set up. Free engines are queried in parallel: DuckDuckGo, Yahoo, Brave, Startpage, Mojeek and Google via `ddgs`, falling back to Wikipedia. Pages needing JavaScript are rendered in headless Chrome, and PDFs are read. Optional free keys: `TAVILY_API_KEY` (1,000 searches/month, no card) or `BRAVE_API_KEY`. |
-| **Browser** (web apps, logins, forms, WhatsApp Web) | PC | Her Chrome window keeps its logins, so sign in once inside it. |
+| **Browser** (web apps, logins, forms, WhatsApp Web) | PC | She drives **your own Chrome** with your logins. Install the [Playwright Extension](https://chromewebstore.google.com/detail/playwright-extension/mmlmfjhmonkocbjadbfplnigmagldckm), open it, copy its token into `.env` as `PLAYWRIGHT_MCP_EXTENSION_TOKEN`, then run `iriis restart`. |
 | **Background tasks and routines** (`tasks`) | cloud | Nothing to set up. Say "look into X and report back", or "every weekday at 7, brief me on my calendar, unread email and the weather". Reports arrive by voice and on Telegram. Background tasks can't confirm anything, so they prepare drafts and never send. |
 | **Telegram** (text or voice notes from anywhere) | cloud | Create a bot with @BotFather and set `TELEGRAM_BOT_TOKEN` on Railway. Message the bot once; it replies with your chat id. Set `TELEGRAM_CHAT_ID` to it. Only that chat is served. |
 | **Gmail and Google Calendar** (`google`) | cloud | See below. |
@@ -304,8 +304,8 @@ The script:
 - asks for `IRIIS_SERVER_URL`, `IRIIS_API_KEY` and `IRIIS_DESKTOP_TOKEN` (copy them from the iriis-voice service's Variables on Railway);
 - starts Iriis at login.
 
-The new computer's link replaces the old one's automatically. Only website logins inside her browser are
-per-computer, so sign in again there and scan WhatsApp Web's QR code once.
+The new computer's link replaces the old one's automatically. She uses that computer's Chrome, so install the
+Playwright Extension there and put its token in `.env`.
 
 ## 5. Permissions and safety
 

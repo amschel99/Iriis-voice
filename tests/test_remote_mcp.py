@@ -30,3 +30,16 @@ def test_seryn_runs_in_the_cloud_and_web_in_both():
     assert "seryn" not in cfg.desktop.servers and "web" in cfg.desktop.servers
     s = {x.name: x for x in load_mcp_servers()}["seryn"]
     assert s.transport == "http" and s.url.startswith("https://") and "SERYN_API_KEY" in s.headers["Authorization"]
+
+
+def test_server_env_expands_and_drops_unset(monkeypatch):
+    from iriis.mcp_client.manager import expand_env
+    monkeypatch.setenv("TAVILY_API_KEY", "tv")
+    monkeypatch.delenv("BRAVE_API_KEY", raising=False)
+    assert expand_env({"TAVILY_API_KEY": "${TAVILY_API_KEY}", "BRAVE_API_KEY": "${BRAVE_API_KEY}", "X": "1"}) == \
+        {"TAVILY_API_KEY": "tv", "X": "1"}
+
+
+def test_browser_uses_the_users_chrome():
+    s = {x.name: x for x in load_mcp_servers()}["browser"]
+    assert "--extension" in s.args and "PLAYWRIGHT_MCP_EXTENSION_TOKEN" in s.env
