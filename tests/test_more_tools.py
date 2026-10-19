@@ -68,3 +68,16 @@ def test_fetches_a_missing_tool_and_uses_it(tmp_path):
         return "yes"
     r = asyncio.run(agent.handle("whats using port 8000", TurnCallbacks(say=say, confirm=nop)))
     assert prov.calls == ["shell__run_command"] and "port 8000" in r.text
+
+
+def test_a_cut_off_tool_call_is_explained_not_run():
+    """The model ran out of room mid-call: the tool must not run with empty arguments, and she's told why."""
+    import asyncio
+    from types import SimpleNamespace
+    from iriis.agent.loop import Agent
+    from iriis.llm.base import ToolCall
+    agent = Agent.__new__(Agent)
+    agent.tools = SimpleNamespace(call_tool=None)
+    out = asyncio.run(agent._execute(ToolCall("studio__make_document", {"_raw": '{"kind": "pdf", "content": "# Gui'}, "c1"),
+                                     {"studio__make_document"}, None))
+    assert out.startswith("ERROR: your call to this tool was cut off")

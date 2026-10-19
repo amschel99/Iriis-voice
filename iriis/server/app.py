@@ -78,7 +78,7 @@ class Core:
         from iriis.server.sessions import Session, run_turn
         cfg = self.cfg.model_copy(deep=True)
         cfg.llm.max_tool_iterations = max(cfg.llm.max_tool_iterations, 20)
-        cfg.llm.max_tokens = max(cfg.llm.max_tokens, 4096)
+        cfg.llm.max_tokens = max(cfg.llm.max_tokens, 8192)      # whole documents fit in one tool call
         cfg.llm.history_max_tokens = max(cfg.llm.history_max_tokens, 30000)   # room for the pages it reads
         sid = f"task-{task_id}"
         session = Session(sid, self._make_agent(sid, cfg))
@@ -311,7 +311,8 @@ def create_app(cfg: Config | None = None) -> FastAPI:
         flusher = asyncio.create_task(core.conversations.run_flusher(cfg.memory.flush_interval_s))
         from iriis.agent.tasks import TaskRunner
         from iriis.agent.mind import run_calls
-        background = [asyncio.create_task(TaskRunner(core.run_task, core.notify, core.db, judge=core.task_unfinished).run()),
+        background = [asyncio.create_task(TaskRunner(core.run_task, core.notify, core.db, judge=core.task_unfinished,
+                                                learn=core.mind.learn_from_task).run()),
                       asyncio.create_task(core.telegram.run()),
                       asyncio.create_task(run_calls(core))]          # rings the alarms and calls the user set
         if not os.environ.get("IRIIS_NO_MIND"):

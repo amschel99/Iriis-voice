@@ -183,6 +183,8 @@ class Agenda:
             text = f"FINDINGS: the session failed ({e.__class__.__name__})."
         out = _sections(text)
         self.mind.add("observation", f"[project {pid}] {out['findings'][:500]}", 5)
+        if len(out["findings"]) > 200:
+            await self.mind.distill(f"my project: {project[:150]}", out["findings"], n=4)
         if out["next"]:
             self.mind.add("observation", f"[project {pid}] next: {out['next'][:300]}", 4)
         return {"project": pid, **out}
@@ -197,6 +199,7 @@ class Agenda:
             goals=" | ".join(self.mind.goals()), exercise=exercise[:600])}]))
         if out.get("lesson"):
             self.mind.add("skill", f"{hobby.split(':')[0]}: {out['lesson']}", 6)
+            self.mind.add("rule", f"[{hobby.split(':')[0].strip().lower()[:20]}] {out['lesson']}", 6)
         self.mind.add("observation", f"I practised {hobby.split(':')[0].lower()}: {exercise[:160]}", 3)
         self.mind.bump("mind_practice")
         return out

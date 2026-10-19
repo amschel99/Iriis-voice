@@ -73,3 +73,51 @@ def test_training_records_mark_corrections(tmp_path):
     recs = training_records(db)
     assert len(recs) == 2 and recs[0]["corrected"] is True and recs[1]["corrected"] is False
     assert recs[0]["messages"][1]["content"] == "Booked 10am."
+
+
+def test_finished_work_becomes_playbook_rules_in_her_prompt(tmp_path):
+    """ACE-style: the writing research turns into rules that are injected when she writes, not for other topics."""
+    rules = json.dumps({"rules": [
+        {"domain": "writing", "rule": "Lead with the one true point in the first sentence.", "importance": 8},
+        {"domain": "writing", "rule": "Cut every word that isn't doing work; prefer short Anglo-Saxon words.", "importance": 7},
+        {"domain": "research", "rule": "Verify every quote against the original source before using it.", "importance": 7},
+        {"domain": "writing", "rule": "too vague"}]})
+    m, core, _ = make_mind(tmp_path, [rules])
+    m._force = True
+    n = asyncio.run(m.distill("background task: learn article writing", "Orwell, Zinsser, McPhee... six habits"))
+    assert n == 3                                                        # the vague one was dropped
+    ctx = m.context("help me write a post about Seryn")
+    assert "Your playbook" in ctx and "Lead with the one true point" in ctx
+    assert "Your playbook" not in m.context("what's the KPLC tariff per kWh")
+    # sharpening an old rule replaces it instead of piling up
+    rid = [r[0] for r in m.rows(("rule",)) if "Lead with" in r[2]][0]
+    core.llm.replies.append(json.dumps({"rules": [{"domain": "writing", "rule": "Lead with the point; one claim per paragraph.",
+                                                    "replaces": rid}]}))
+    asyncio.run(m.distill("practice", "x"))
+    texts = [r[2] for r in m.rows(("rule",))]
+    assert not any("Lead with the one true point" in t for t in texts) and any("one claim per paragraph" in t for t in texts)
+
+
+def test_task_runner_learns_only_from_finished_tasks(tmp_path, monkeypatch):
+    from iriis.agent.tasks import TaskRunner
+    from iriis.storage import DB
+    import servers.tasks as T
+    db = DB("", tmp_path / "t.sqlite3")
+    monkeypatch.setattr(T, "get_db", lambda: db)
+    T.start_task("Learn article writing from credible sources and write a guide", title="Writing")
+    T.start_task("Compare three freezer suppliers in Nairobi", title="Freezers")
+    learned = []
+    replies = {1: "Notes so far.\nSTATUS: continue", 2: "Here is the comparison.\nSTATUS: done"}
+
+    async def run(tid, prompt):
+        return replies[tid]
+
+    async def notify(spoken, full):
+        pass
+    r = TaskRunner(run, notify, db, learn=lambda goal, report: learned.append(goal))
+
+    async def go():
+        for row in r.due(5):
+            await r._work(row)
+    asyncio.run(go())
+    assert learned == ["Compare three freezer suppliers in Nairobi"]

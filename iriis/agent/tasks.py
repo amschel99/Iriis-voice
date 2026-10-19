@@ -54,10 +54,12 @@ def first_sentence(text: str, limit: int = 220) -> str:
 class TaskRunner:
     def __init__(self, run: Callable[[int, str], Awaitable[str]], notify: Callable[[str, str], Awaitable[None]],
                  db: DB | None = None, interval_s: float = 15.0, max_parallel: int = 2, timeout_s: float = 900.0,
-                 judge: Callable[[str, str], Awaitable[bool]] | None = None):
+                 judge: Callable[[str, str], Awaitable[bool]] | None = None,
+                 learn: Callable[[str, str], None] | None = None):
         """run(task_id, prompt) -> report text; notify(short spoken line, full report);
         judge(goal, report) -> True when the report is only progress notes (used when she leaves out STATUS)."""
         self.judge = judge
+        self.learn = learn        # learn(goal, report): a finished task's lessons go into her playbook
         self.run_fn = run
         self.notify = notify
         self.db = db
@@ -135,6 +137,11 @@ class TaskRunner:
                 return        # keeps working quietly; the user hears when it's really done
             spoken = (f"Your task {title} is done. {first_sentence(report)}" if ok
                       else f"Your task {title} didn't finish. {first_sentence(report)}")
+            if ok and self.learn:
+                try:
+                    self.learn(goal, report)
+                except Exception:  # noqa: BLE001
+                    log.exception("task %s: learning failed", tid)
             try:
                 await self.notify(spoken, f"Task {tid}: {title}\n\n{report}")
             except Exception:  # noqa: BLE001

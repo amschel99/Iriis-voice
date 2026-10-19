@@ -39,7 +39,8 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("iriis.mind")
 
-KINDS = ("observation", "insight", "pattern", "person", "lesson", "skill", "goal", "loop", "project", "hobby", "growth")
+KINDS = ("observation", "insight", "pattern", "person", "lesson", "skill", "goal", "loop", "project", "hobby", "growth",
+         "rule")      # rule: a playbook rule she distilled from her own work, "[domain] rule"
 SEED_GOALS = [
     "Help {user} make Seryn Labs succeed: progress on the product, the lab tests, customers and money.",
     "Look after {user}: enough sleep, food and rest, commitments kept, nothing important forgotten.",
@@ -55,8 +56,15 @@ MAX_EMERGENCIES_PER_DAY = 2
 SKIP_SESSIONS = ("task-", "mind", "mcp", "ops-")      # ops-*: health checks, not real conversations
 
 
+def _stem(w: str) -> str:
+    for suf in ("ings", "ing", "ers", "er", "ies", "ed", "es", "s"):
+        if len(w) > len(suf) + 3 and w.endswith(suf):
+            return w[: -len(suf)]
+    return w.rstrip("e") if len(w) > 4 else w
+
+
 def words(text: str) -> set[str]:
-    return {w for w in re.findall(r"[a-z0-9']{3,}", (text or "").lower()) if w not in STOP}
+    return {_stem(w) for w in re.findall(r"[a-z0-9']{3,}", (text or "").lower()) if w not in STOP}
 
 
 def parse_json(text: str) -> dict[str, Any]:
@@ -120,6 +128,20 @@ fits. Don't reinvent yourself overnight. Reply with JSON only, same keys as the 
 Current character: {persona}
 How he responded (replies, corrections, what he ignored): {feedback}
 New things you know about him: {know}"""
+
+DISTILL = """You are {name}. You just finished a piece of your own work. Distil what it taught you into a few playbook
+rules: short, concrete, actionable instructions you will follow next time you do this kind of thing for {user}
+(like an expert's checklist, not a summary of sources). Tag each with a one-word domain (writing, research, seryn,
+strategy, sales, coding, health, ...). Rules you already have are listed: don't repeat them; you may sharpen one by
+giving its id. Reply with JSON only:
+{{"rules": [{{"domain": "writing", "rule": "Lead with the single most important point in the first sentence.", "importance": 1-10,
+            "replaces": null}}]}}
+At most {n} rules; fewer is better than vague ones.
+
+Rules you already have: {have}
+
+The work ({what}):
+{text}"""
 
 CONSOLIDATE = """You are {name}, reflecting at the end of the day on everything you've noticed about {user} and about your
 own work (as in "Generative Agents": turn many small observations into a few higher-level insights). Reply with JSON only:
@@ -381,6 +403,10 @@ class Mind:
             people = self.retrieve(query, ("person",), 5)
             if people:
                 parts.append("People in their life:\n" + "\n".join(f"- {r[2]}" for r in people))
+            rules = [r for r in self.retrieve(query, ("rule",), 10) if not query or words(query) & words(r[2])][:8]
+            if rules:
+                parts.append("Your playbook (rules you learned from your own work; apply them):\n" +
+                             "\n".join(f"- {r[2]}" for r in rules))
             lessons = self.retrieve(query, ("lesson",), 6)
             if lessons:
                 parts.append("Lessons from your past mistakes (follow them):\n" + "\n".join(f"- {r[2]}" for r in lessons))
@@ -423,6 +449,34 @@ class Mind:
             lines.append(f"- task {tid} '{title}': {state}")
         return ("Your background work (when asked about progress, answer from this honestly: what's done, what's left, "
                 "anything that went wrong; read the full report with task_result if needed):\n" + "\n".join(lines))
+
+    # ------------------------------------------------------------------ her playbook (rules learned from her own work)
+    async def distill(self, what: str, text: str, n: int = 8) -> int:
+        """Agentic Context Engineering: turn finished work into playbook rules (delta updates, not rewrites)."""
+        if os.environ.get("IRIIS_NO_MIND") and not getattr(self, "_force", False):
+            return 0
+        have = await asyncio.to_thread(self.retrieve, what + " " + text[:600], ("rule",), 20)
+        prompt = DISTILL.format(name=self.name, user=self.user, n=n, what=what[:300], text=text[:9000],
+                                have="; ".join(f"{r[0]}: {r[2]}" for r in have)[:3000] or "none yet")
+        out = parse_json(await self.llm.complete([{"role": "user", "content": prompt}]))
+        added = 0
+        for r in (out.get("rules") or [])[:n]:
+            if not isinstance(r, dict) or len(str(r.get("rule", ""))) < 12:
+                continue
+            text_r = f"[{str(r.get('domain') or 'general').lower()[:20]}] {str(r['rule']).strip()}"
+            if r.get("replaces"):
+                await asyncio.to_thread(self.retire, [r["replaces"]])
+            if await asyncio.to_thread(self.add, "rule", text_r, r.get("importance", 7)):
+                added += 1
+        if added:
+            await asyncio.to_thread(self.add, "observation", f"I added {added} rules to my playbook from: {what[:120]}", 3)
+        return added
+
+    def learn_from_task(self, goal: str, report: str) -> None:
+        """TaskRunner hook: a finished task becomes playbook rules (in the background)."""
+        t = asyncio.get_running_loop().create_task(self.distill(f"background task: {goal[:200]}", report))
+        self._tasks.add(t)
+        t.add_done_callback(self._tasks.discard)
 
     # ------------------------------------------------------------------ after every conversation turn
     def after_turn(self, session_id: str, user_text: str, reply: str, tool_calls: list[dict[str, Any]]) -> None:

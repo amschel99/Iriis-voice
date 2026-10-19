@@ -67,7 +67,7 @@ class LLMConfig(BaseModel):
     reasoning_effort: str | None = "low"                 # gpt-oss on Groq: low = fastest first token
     # DeepSeek "thinking": off = answers immediately (best for voice); low/high = reasons first (slower, deeper)
     thinking: Literal["off", "low", "high"] = "off"
-    max_tokens: int = 2048
+    max_tokens: int = 4096          # room for a document written into one tool call
     model: str = "openai/gpt-oss-120b"
     fallback_model: str = "openai/gpt-oss-20b"
     offline_model: str = "qwen3:4b-instruct-2507-q4_K_M"

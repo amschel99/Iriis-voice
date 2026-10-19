@@ -221,6 +221,10 @@ class Agent:
         return "Now available: " + ", ".join(t["function"]["name"] for t in added) + ". Use them."
 
     async def _execute(self, call: ToolCall, known: set[str], cb: TurnCallbacks) -> str:
+        if "_raw" in call.arguments:          # the model ran out of room mid-call: the arguments are cut off
+            return ("ERROR: your call to this tool was cut off before it finished (too long for one message), so it "
+                    "did not run. Make it shorter: for a long document, keep it under about 2,000 words, or make it "
+                    "in parts (several documents, or a shorter version now and the rest next).")
         args = {k: v for k, v in call.arguments.items() if not k.startswith("_")}
         if call.name not in known or self.tools is None:
             return f"ERROR: there is no tool named {call.name}."
