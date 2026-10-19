@@ -277,5 +277,350 @@ def list_files(limit: int = 15) -> str:
                      for i, n, s, c in rows)
 
 
+# ---------------------------------------------------------------------------- maths plots and hand-drawn sketches
+_MATH = {"sin", "cos", "tan", "arcsin", "arccos", "arctan", "arctan2", "sinh", "cosh", "tanh", "exp", "log", "log10",
+         "log2", "sqrt", "abs", "floor", "ceil", "sign", "minimum", "maximum", "where", "clip", "pi", "e"}
+
+
+def safe_expr(expr: str, **vars_) -> "Any":
+    """Evaluate a maths expression over numpy arrays: numbers, + - * / ** %, comparisons, the functions above and
+    the given variables only. No attributes, no indexing, no names outside that list."""
+    import ast
+
+    import numpy as np
+    src = expr.replace("^", "**").strip()
+    tree = ast.parse(src, mode="eval")
+    allowed = (ast.Expression, ast.BinOp, ast.UnaryOp, ast.Compare, ast.BoolOp, ast.Call, ast.Name, ast.Load,
+               ast.Constant, ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow, ast.Mod, ast.FloorDiv, ast.USub, ast.UAdd,
+               ast.Lt, ast.LtE, ast.Gt, ast.GtE, ast.Eq, ast.NotEq, ast.And, ast.Or, ast.IfExp)
+    for node in ast.walk(tree):
+        if not isinstance(node, allowed):
+            raise ValueError(f"'{expr}': only maths is allowed ({type(node).__name__} isn't)")
+        if isinstance(node, ast.Name) and node.id not in _MATH and node.id not in vars_:
+            raise ValueError(f"'{expr}': unknown name '{node.id}'")
+        if isinstance(node, ast.Call) and not (isinstance(node.func, ast.Name) and node.func.id in _MATH):
+            raise ValueError(f"'{expr}': unknown function")
+    env = {n: getattr(np, n) for n in _MATH if hasattr(np, n)}
+    env["abs"] = np.abs
+    env.update(vars_)
+    with np.errstate(all="ignore"):
+        return eval(compile(tree, "<expr>", "eval"), {"__builtins__": {}}, env)  # noqa: S307  (AST-checked above)
+
+
+def _fig(hand: bool, size=(8, 6)):
+    import logging
+
+    import matplotlib
+    matplotlib.use("Agg")
+    logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)   # no xkcd font installed: that's fine
+    import matplotlib.pyplot as plt
+    ctx = plt.xkcd(scale=1.2, length=90, randomness=2) if hand else plt.rc_context({"font.size": 11})
+    return plt, ctx
+
+
+@mcp.tool()
+def plot_math(functions: list[dict] | None = None, x_range: list[float] | None = None, parametric: list[dict] | None = None,
+              points: list[dict] | None = None, title: str = "", x_label: str = "x", y_label: str = "y",
+              equal_aspect: bool = False, hand_drawn: bool = False, y_range: list[float] | None = None,
+              filename: str = "") -> str:
+    """Plot 2D maths: functions y = f(x), parametric curves, and labelled points, as a PNG.
+    functions: [{"expr": "sin(x) * exp(-x/5)", "label": "damped"}]; x_range: [xmin, xmax];
+    parametric: [{"x": "cos(t)", "y": "sin(t)", "t": [0, 6.283], "label": "circle"}];
+    points: [{"x": 1, "y": 2, "label": "A"}]; y_range: [ymin, ymax] (optional; asymptotes are clipped). Allowed: + - * / ^, sin cos tan exp log sqrt abs pi e, etc.
+    hand_drawn=true draws it like a whiteboard sketch. Good for explaining maths, physics and engineering."""
+    import io
+
+    import numpy as np
+    lo, hi = (x_range or [-10, 10])[:2]
+    plt, ctx = _fig(hand_drawn)
+    with ctx:
+        fig, ax = plt.subplots(figsize=(8.5, 6), dpi=150)
+        x = np.linspace(float(lo), float(hi), 1200)
+        ys = []
+        for f in functions or []:
+            y = np.broadcast_to(np.asarray(safe_expr(str(f["expr"]), x=x), dtype=float), x.shape).copy()
+            y[~np.isfinite(y)] = np.nan
+            ys.append(y)
+        ylim = None
+        if y_range:
+            ylim = (float(y_range[0]), float(y_range[1]))
+        elif ys and np.isfinite(np.concatenate(ys)).any():
+            a, b = np.nanpercentile(np.concatenate(ys), [3, 97])      # robust: asymptotes don't squash the view
+            pad = (b - a) * 0.2 or 1.0
+            lo_all, hi_all = np.nanmin(np.concatenate(ys)), np.nanmax(np.concatenate(ys))
+            ylim = (max(lo_all, a - pad) - pad * 0.1, min(hi_all, b + pad) + pad * 0.1)
+        for i, (f, y) in enumerate(zip(functions or [], ys)):
+            if ylim:                                   # break the line where it leaves the view (asymptotes)
+                span = ylim[1] - ylim[0]
+                y[(y < ylim[0] - span) | (y > ylim[1] + span)] = np.nan
+            ax.plot(x, y, lw=2.2, color=PALETTE[i % 10], label=f.get("label") or f"y = {f['expr']}")
+        for j, p in enumerate(parametric or []):
+            t0, t1 = (p.get("t") or [0, 2 * np.pi])[:2]
+            t = np.linspace(float(t0), float(t1), 1500)
+            xs = np.broadcast_to(np.asarray(safe_expr(str(p["x"]), t=t), float), t.shape)
+            ys = np.broadcast_to(np.asarray(safe_expr(str(p["y"]), t=t), float), t.shape)
+            ax.plot(xs, ys, lw=2.2, color=PALETTE[(len(functions or []) + j) % 10], label=p.get("label"))
+        for p in points or []:
+            ax.scatter([float(p["x"])], [float(p["y"])], s=45, color="#C0392B", zorder=5)
+            if p.get("label"):
+                ax.annotate(str(p["label"]), (float(p["x"]), float(p["y"])), textcoords="offset points", xytext=(6, 6))
+        if not hand_drawn:
+            ax.grid(True, alpha=0.3)
+            ax.axhline(0, color="#999", lw=0.8)
+            ax.axvline(0, color="#999", lw=0.8)
+        if equal_aspect:
+            ax.set_aspect("equal", adjustable="datalim")
+        ax.set_xlabel(x_label)
+        ax.set_ylabel(y_label)
+        if title:
+            ax.set_title(title)
+        if ylim:
+            ax.set_ylim(*ylim)
+        if ax.get_legend_handles_labels()[0]:
+            ax.legend(frameon=False)
+        fig.tight_layout()
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png")
+        plt.close(fig)
+    png = buf.getvalue()
+    name = _slug(filename or title or "plot", ".png")
+    return _ready(store(name, png, "image/png"), name, len(png), "Plot")
+
+
+@mcp.tool()
+def make_sketch(elements: list[dict], title: str = "", hand_drawn: bool = True, filename: str = "") -> str:
+    """Draw a picture yourself, by hand, like on a whiteboard: explain a setup, a layout, what the camera saw, a
+    device, a room plan or an idea. The canvas is 100 wide x 70 high, (0, 0) bottom-left. elements, each with
+    optional "color", "fill", "label", "width":
+      {"shape": "rect", "x": 10, "y": 10, "w": 30, "h": 20}      {"shape": "circle", "x": 50, "y": 35, "r": 8}
+      {"shape": "ellipse", "x": 50, "y": 35, "w": 30, "h": 12}    {"shape": "line", "points": [[0,0],[20,10]]}
+      {"shape": "arrow", "from": [10, 10], "to": [40, 30]}       {"shape": "polygon", "points": [[..], ..]}
+      {"shape": "text", "x": 50, "y": 65, "text": "Fridge", "size": 14}
+    Labels sit at the shape's centre (arrows: midpoint). Colours: names or hex. hand_drawn=false for clean lines."""
+    import io
+
+    from matplotlib import patches
+    plt, ctx = _fig(hand_drawn)
+    with ctx:
+        fig, ax = plt.subplots(figsize=(10, 7), dpi=150)
+        ax.set_xlim(0, 100)
+        ax.set_ylim(0, 70)
+        ax.set_aspect("equal")
+        ax.axis("off")
+        for i, el in enumerate(elements or []):
+            kind = str(el.get("shape", "")).lower()
+            color = el.get("color") or "#2C3E50"
+            fill = el.get("fill")
+            lw = float(el.get("width", 2))
+            kw = {"edgecolor": color, "facecolor": fill or "none", "lw": lw, "alpha": 0.9}
+            centre = None
+            if kind in ("rect", "rectangle", "box"):
+                x, y, w, h = (float(el[k]) for k in ("x", "y", "w", "h"))
+                ax.add_patch(patches.FancyBboxPatch((x, y), w, h, boxstyle="round,pad=0.4,rounding_size=1.2", **kw))
+                centre = (x + w / 2, y + h / 2)
+            elif kind == "circle":
+                x, y, r = float(el["x"]), float(el["y"]), float(el["r"])
+                ax.add_patch(patches.Circle((x, y), r, **kw))
+                centre = (x, y)
+            elif kind == "ellipse":
+                x, y = float(el["x"]), float(el["y"])
+                ax.add_patch(patches.Ellipse((x, y), float(el["w"]), float(el["h"]), **kw))
+                centre = (x, y)
+            elif kind in ("line", "polyline"):
+                pts = [(float(a), float(b)) for a, b in el["points"]]
+                ax.plot(*zip(*pts), color=color, lw=lw)
+                centre = pts[len(pts) // 2]
+            elif kind == "arrow":
+                (x0, y0), (x1, y1) = el["from"], el["to"]
+                ax.annotate("", xy=(float(x1), float(y1)), xytext=(float(x0), float(y0)),
+                            arrowprops={"arrowstyle": "-|>", "color": color, "lw": lw, "mutation_scale": 18})
+                centre = ((float(x0) + float(x1)) / 2, (float(y0) + float(y1)) / 2 + 2)
+            elif kind == "polygon":
+                ax.add_patch(patches.Polygon([(float(a), float(b)) for a, b in el["points"]], closed=True, **kw))
+                pts = el["points"]
+                centre = (sum(float(p[0]) for p in pts) / len(pts), sum(float(p[1]) for p in pts) / len(pts))
+            elif kind == "text":
+                ax.text(float(el["x"]), float(el["y"]), str(el.get("text", "")), ha="center", va="center",
+                        fontsize=float(el.get("size", 13)), color=color)
+                continue
+            else:
+                raise ValueError(f"element {i}: unknown shape '{kind}' (rect, circle, ellipse, line, arrow, polygon, text)")
+            if el.get("label") and centre:
+                ax.text(centre[0], centre[1], str(el["label"]), ha="center", va="center", fontsize=12, color="#111")
+        if title:
+            ax.set_title(title, fontsize=16)
+        fig.tight_layout()
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", facecolor="white")
+        plt.close(fig)
+    png = buf.getvalue()
+    name = _slug(filename or title or "sketch", ".png")
+    return _ready(store(name, png, "image/png"), name, len(png), "Sketch")
+
+
+# ---------------------------------------------------------------------------- the camera and what the user sends
+def _vision() -> tuple[str, str]:
+    url, key = os.environ.get("VISION_MCP_URL", "").strip(), os.environ.get("VISION_ACCESS_KEY", "").strip()
+    return (url.rstrip("/").removesuffix("/mcp"), key) if url and key else ("", "")
+
+
+@mcp.tool()
+def camera_photo(filename: str = "") -> str:
+    """Take a photo from the live camera (the user's phone on a video call) and keep it as a file, so you can put
+    it in a document (![caption](file:N)), send it, or look at it closely with inspect_file."""
+    base, key = _vision()
+    if not base:
+        raise ValueError("The camera isn't connected (VISION_MCP_URL / VISION_ACCESS_KEY).")
+    r = httpx.get(f"{base}/api/frame", headers={"Authorization": f"Bearer {key}"}, timeout=20)
+    if r.status_code == 404:
+        raise ValueError("No phone is streaming right now; ask the user to open the video call.")
+    r.raise_for_status()
+    name = _slug(filename or f"camera_{time.strftime('%Y%m%d_%H%M%S')}", ".jpg")
+    return _ready(store(name, r.content, "image/jpeg"), name, len(r.content), "Photo")
+
+
+def vision_describe(images: list[bytes], question: str, max_tokens: int = 700) -> str:
+    """Ask a vision model about pictures: Gemini (free tier) first, then Groq. Both are OpenAI-compatible."""
+    providers = []
+    if os.environ.get("GEMINI_API_KEY"):
+        providers.append(("https://generativelanguage.googleapis.com/v1beta/openai", os.environ["GEMINI_API_KEY"],
+                          os.environ.get("GEMINI_VISION_MODEL", "gemini-2.5-flash"), 8))
+    if os.environ.get("GROQ_API_KEY"):
+        providers.append(("https://api.groq.com/openai/v1", os.environ["GROQ_API_KEY"],
+                          os.environ.get("GROQ_VISION_MODEL", "qwen/qwen3.8-27b"), 3))
+    if not providers:
+        raise ValueError("No vision model is configured (GEMINI_API_KEY or GROQ_API_KEY).")
+    errors = []
+    for base, key, model, limit in providers:
+        parts = [{"type": "text", "text": question}] + [
+            {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(_jpeg(b)).decode()}}
+            for b in images[:limit]]
+        try:
+            r = httpx.post(f"{base}/chat/completions", timeout=90, headers={"Authorization": f"Bearer {key}"},
+                           json={"model": model, "max_tokens": max_tokens, "temperature": 0.2,
+                                 "messages": [{"role": "user", "content": parts}]})
+            r.raise_for_status()
+            text = r.json()["choices"][0]["message"]["content"] or ""
+            return re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"{model}: {str(e)[:120]}")
+    raise ValueError("The vision models didn't answer: " + "; ".join(errors))
+
+
+def _jpeg(data: bytes, side: int = 1280) -> bytes:
+    """Any image -> a JPEG no bigger than `side` px (smaller uploads, every provider accepts it)."""
+    import io
+    try:
+        from PIL import Image        # comes with Matplotlib
+        im = Image.open(io.BytesIO(data)).convert("RGB")
+        im.thumbnail((side, side))
+        out = io.BytesIO()
+        im.save(out, "JPEG", quality=85)
+        return out.getvalue()
+    except Exception:  # noqa: BLE001  (not an image Pillow knows: send as is)
+        return data
+
+
+def _video_frames(data: bytes, n: int = 6) -> tuple[list[bytes], float]:
+    import io
+
+    import av
+    frames, duration = [], 0.0
+    with av.open(io.BytesIO(data)) as c:
+        st = next((s for s in c.streams if s.type == "video"), None)
+        if st is None:
+            return [], 0.0
+        duration = float(c.duration / 1e6) if c.duration else 0.0
+        every = max(duration / n, 0.5) if duration else 1.0
+        nxt = 0.0
+        for fr in c.decode(st):
+            t = float(fr.time or 0)
+            if t + 1e-6 >= nxt:
+                out = io.BytesIO()
+                fr.to_image().save(out, "JPEG", quality=80)
+                frames.append(out.getvalue())
+                nxt = t + every
+                if len(frames) >= n:
+                    break
+    return frames, duration
+
+
+def _transcribe(name: str, data: bytes, mime: str) -> str:
+    """Her own speech-to-text (the server's /v1/stt), so audio and video soundtracks become words."""
+    port, key = os.environ.get("PORT", "8000"), os.environ.get("IRIIS_API_KEY", "")
+    r = httpx.post(f"http://127.0.0.1:{port}/v1/stt", files={"file": (name, data, mime)}, timeout=180,
+                   headers={"Authorization": f"Bearer {key}"} if key else {})
+    r.raise_for_status()
+    return (r.json().get("text") or "").strip()
+
+
+@mcp.tool()
+def inspect_file(file_id: int, question: str = "") -> str:
+    """Open a file the user sent in the chat (or one you made) and read it: PDFs, Word, Excel, PowerPoint, text,
+    CSV and code are read as text; pictures are looked at by a vision model; audio is transcribed; videos are
+    watched (key frames) and listened to. question: what to look for, e.g. "what's wrong in this wiring?"."""
+    import io
+    name, mime, data = load(file_id)
+    low = name.lower()
+    q = question.strip() or "Describe this in detail: what it shows, any text, numbers, problems or things worth noting."
+    if mime.startswith("image/") or low.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".heic")):
+        return f"{name} (picture): " + vision_describe([data], q)
+    if mime.startswith("audio/") or low.endswith((".mp3", ".wav", ".ogg", ".oga", ".m4a", ".webm", ".flac", ".aac", ".opus")):
+        return f"{name} (audio) transcript: " + (_transcribe(name, data, mime) or "(no speech heard)")
+    if mime.startswith("video/") or low.endswith((".mp4", ".mov", ".mkv", ".avi", ".3gp")):
+        frames, dur = _video_frames(data)
+        seen = vision_describe(frames, f"These are {len(frames)} frames in order from a {dur:.0f} s video. {q}") if frames else ""
+        try:
+            heard = _transcribe(name, data, mime)
+        except Exception:  # noqa: BLE001
+            heard = ""
+        return f"{name} (video, {dur:.0f} s). What it shows: {seen or '(no frames)'}\nWhat's said: {heard or '(no speech)'}"
+    text = ""
+    if low.endswith(".pdf") or mime == "application/pdf":
+        from pypdf import PdfReader
+        reader = PdfReader(io.BytesIO(data))
+        text = "\n".join(f"[page {i + 1}] {(p.extract_text() or '').strip()}" for i, p in enumerate(reader.pages[:60]))
+        if len(text.strip()) < 40 * max(1, len(reader.pages[:60])):      # a scan: look at the pages instead
+            return f"{name} (scanned PDF, {len(reader.pages)} pages): " + _pdf_pages_seen(data, q)
+    elif low.endswith(".docx"):
+        import docx
+        d = docx.Document(io.BytesIO(data))
+        text = "\n".join(p.text for p in d.paragraphs) + "\n" + "\n".join(
+            " | ".join(c.text for c in row.cells) for t in d.tables for row in t.rows)
+    elif low.endswith((".xlsx", ".xlsm")):
+        import openpyxl
+        wb = openpyxl.load_workbook(io.BytesIO(data), data_only=True, read_only=True)
+        for ws in wb.worksheets[:8]:
+            text += f"\n# sheet {ws.title}\n" + "\n".join(
+                ",".join("" if v is None else str(v) for v in row) for row in ws.iter_rows(max_row=300, values_only=True))
+    elif low.endswith(".pptx"):
+        from pptx import Presentation
+        prs = Presentation(io.BytesIO(data))
+        text = "\n".join(f"[slide {i + 1}] " + " / ".join(sh.text_frame.text for sh in s.shapes if sh.has_text_frame)
+                         for i, s in enumerate(prs.slides))
+    else:
+        text = data[:400_000].decode("utf-8", errors="replace")
+    text = text.strip()
+    if not text:
+        return f"{name}: I couldn't find any text in it."
+    head = f"{name} ({len(text):,} characters)"
+    return f"{head}:\n{text[:12000]}" + ("\n[the rest is longer; ask about a part]" if len(text) > 12000 else "")
+
+
+def _pdf_pages_seen(data: bytes, q: str) -> str:
+    try:
+        import pypdfium2 as pdfium   # optional
+    except ImportError:
+        return "it has no text layer and I can't render pages here."
+    import io
+    pdf = pdfium.PdfDocument(data)
+    imgs = []
+    for i in range(min(len(pdf), 4)):
+        out = io.BytesIO()
+        pdf[i].render(scale=1.5).to_pil().save(out, "JPEG", quality=80)
+        imgs.append(out.getvalue())
+    return vision_describe(imgs, q)
+
+
 if __name__ == "__main__":
     mcp.run()

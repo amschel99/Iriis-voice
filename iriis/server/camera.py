@@ -12,14 +12,28 @@ import asyncio
 import json
 import logging
 import os
+import re
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket
 from fastapi.responses import Response
 
 log = logging.getLogger("iriis.camera")
-router = APIRouter()
+_BRAINS: set = set()
 CAMERA_SESSION = "iriis-app"          # one Vision session for the app, so goal/procedure/history persist
+DOING = {"studio": "making it…", "web": "searching the web…", "browser": "using your browser…", "whatsapp": "on WhatsApp…",
+         "google": "checking Gmail and Calendar…", "seryn": "asking the Seryn Twin…", "tasks": "setting it up…",
+         "notes_reminders": "making a note…", "memory": "remembering…", "bench": "looking again…",
+         "documents": "working on the document…", "money": "checking your money…"}
+
+
+def _file_meta(db, ids: list[str]) -> list[dict]:
+    out = []
+    for i in ids:
+        rows = db.execute("SELECT id, name, mime FROM files WHERE id = ?", (int(i),))
+        if rows:
+            out.append({"id": rows[0][0], "name": rows[0][1], "type": rows[0][2]})
+    return out
 HOP = {"host", "content-length", "connection", "keep-alive", "transfer-encoding", "content-encoding", "authorization",
        "cookie", "upgrade"}
 
@@ -33,6 +47,7 @@ def vision_base() -> tuple[str, str]:
 
 
 def setup(require_key, ws_authorised, api_key_env: str, core_ref):
+    router = APIRouter()          # one per app (tests build several apps in one process)
     deps = [Depends(require_key)]
 
     @router.get("/v1/camera/status", dependencies=deps)
@@ -87,13 +102,67 @@ def setup(require_key, ws_authorised, api_key_env: str, core_ref):
             await ws.close(code=1013)
             return
         last_q: list[str] = []
-        try:       # what Iriis remembers about the user, so the camera knows who it's talking to
+        try:       # what Iriis remembers and has learned about the user, so the camera knows who it's talking to
             core = core_ref.get("core")
-            facts = [t for _, t in core.memory.all()[-60:]] if core and core.memory else []
-            if facts:
-                await up.send(json.dumps({"type": "about", "text": "\n".join(f"- {f}" for f in facts)[:4000]}))
+            facts = [t for _, t in core.memory.all()[-40:]] if core and core.memory else []
+            mind = core.mind.context("", for_camera=True) if core and getattr(core, "mind", None) else ""
+            about = ("\n".join(f"- {f}" for f in facts) + ("\n\n" + mind if mind else "")).strip()
+            if about:
+                await up.send(json.dumps({"type": "about", "text": about[:4000]}))
         except Exception:  # noqa: BLE001
             pass
+        brain_q: asyncio.Queue = asyncio.Queue()
+
+        async def phone(msg: dict) -> None:
+            try:
+                await ws.send_text(json.dumps(msg))
+            except Exception:  # noqa: BLE001
+                pass
+
+        async def brain():
+            """The camera model answers fast; then her main brain decides whether there's more to do (make a PDF or
+            a drawing, message someone, set a reminder, explain deeper) and does it with all her tools."""
+            from iriis.server.sessions import run_turn
+            while True:
+                item = await brain_q.get()
+                if item is None:
+                    return
+                question, said = item
+                core = core_ref.get("core")
+                if not core:
+                    continue
+                files: list[str] = []
+
+                async def emit(ev, _audio):
+                    kind = ev.get("type")
+                    if kind == "tool":
+                        t = ev.get("text", "")
+                        files.extend(f for f in re.findall(r"\bready: file (\d+)\b", t) if f not in files)
+                        m = re.match(r"^->\s+(\S+)", t)
+                        if m:
+                            await phone({"type": "brain_thinking", "text": DOING.get(m.group(1).split("__")[0], "working on it…")})
+                    elif kind == "confirm":
+                        await phone({"type": "brain_confirm", "id": ev["id"], "question": ev["question"],
+                                     "session_id": ev["session_id"]})
+                prompt = (f"[Video call: the user is showing you things through their phone camera.] They asked: \"{question}\"\n"
+                          f"Your eyes (the camera model) already answered them out loud: \"{said}\"\n"
+                          "If that fully answers them, reply with just the word SILENT. If they want more - something made "
+                          "(a summary, PDF, drawing or sketch, plot, diagram), something done (a message, a reminder, a note, "
+                          "a task), or a deeper explanation - do it now with your tools. camera_photo takes a picture from "
+                          "the camera for documents; bench_look looks again. Keep what you say short: it's spoken.")
+                try:
+                    done = await run_turn(core.sessions.get("camera"), prompt, emit)
+                except Exception as e:  # noqa: BLE001
+                    log.info("camera brain failed: %s", e)
+                    await phone({"type": "brain_done"})
+                    continue
+                text = (done.get("text") or "").strip()
+                if not text and not files:
+                    await phone({"type": "brain_done"})
+                    continue
+                meta = await asyncio.to_thread(_file_meta, core.db, files)
+                await phone({"type": "brain", "say": text, "files": meta})
+                remember("assistant", text + "".join(f"\n[file:{f}]" for f in files))
 
         def remember(role: str, text: str) -> None:
             core = core_ref.get("core")
@@ -111,9 +180,12 @@ def setup(require_key, ws_authorised, api_key_env: str, core_ref):
                 try:
                     d = json.loads(m)
                     if d.get("type") == "answer" and not d.get("quiet") and not d.get("step_check"):
-                        if last_q:
-                            remember("user", last_q.pop(0))
+                        q = last_q.pop(0) if last_q else ""
+                        if q:
+                            remember("user", q)
                         remember("assistant", d.get("say", ""))
+                        if q and not d.get("coach"):
+                            brain_q.put_nowait((q, d.get("say", "")))
                 except ValueError:
                     pass
                 await ws.send_text(m)
@@ -135,6 +207,9 @@ def setup(require_key, ws_authorised, api_key_env: str, core_ref):
                     await up.send(m["text"])
 
         tasks = [asyncio.create_task(down()), asyncio.create_task(upstream())]
+        thinker = asyncio.create_task(brain())
+        _BRAINS.add(thinker)                  # kept alive until she's finished, even after the call ends
+        thinker.add_done_callback(_BRAINS.discard)
         try:
             done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             for t in done:
@@ -143,6 +218,7 @@ def setup(require_key, ws_authorised, api_key_env: str, core_ref):
         finally:
             for t in tasks:
                 t.cancel()
+            brain_q.put_nowait(None)      # hung up: she still finishes what she's making (it lands in the chat), then stops
             await up.close()
             try:
                 await ws.close()

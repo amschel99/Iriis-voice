@@ -46,6 +46,15 @@ _TABLES = {
                     "business TEXT NOT NULL DEFAULT 'personal', created {real} NOT NULL",
     "budgets": "category TEXT NOT NULL, business TEXT NOT NULL DEFAULT 'personal', monthly_limit {real} NOT NULL, "
                "PRIMARY KEY (category, business)",
+    # Iriis phoning the user (alarms, reminders, her own decisions): a ringing call in the app + notification.
+    # status: scheduled | ringing | answered | missed | declined | cancelled. repeat: '' or 'daily HH:MM' / 'weekdays HH:MM'.
+    "calls": "id {pk}, at {real} NOT NULL, reason TEXT NOT NULL, opening TEXT NOT NULL DEFAULT '', "
+             "status TEXT NOT NULL DEFAULT 'scheduled', repeat TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'user', "
+             "created {real} NOT NULL, rang {real}, answered {real}",
+    # Her own mind (iriis/agent/mind.py): the memory stream. kind: observation | insight | lesson | skill | goal |
+    # loop (an open commitment) | pattern (the user's habits) | person. importance 1-10; active 0 when superseded.
+    "mind": "id {pk}, kind TEXT NOT NULL, text TEXT NOT NULL, importance {real} NOT NULL DEFAULT 5, "
+            "uses INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1, created {real} NOT NULL, last_used {real}",
 }
 _INDEXES = [
     "CREATE INDEX IF NOT EXISTS tasks_due ON tasks (status, next_run)",

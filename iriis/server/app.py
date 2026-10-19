@@ -60,12 +60,16 @@ class Core:
         self.telegram = TelegramBridge(self)
         self.problems: list[str] = []
         self.started = time.time()
+        from iriis.agent.mind import Mind
+        self.mind = Mind(self)          # her memory stream: what she learns about the user, lessons, goals, mood
 
     def _make_agent(self, session_id: str, cfg: Config | None = None) -> Agent:
         facts = (lambda: [t for _, t in self.memory.all()]) if self.memory else None
         agent = Agent(cfg or self.cfg, self.llm, self.tools, self.permissions, facts,
                       store=self.conversations, session_id=session_id)
         agent.audit = self.audit
+        if not session_id.startswith("mind"):
+            agent.mind = self.mind
         return agent
 
     async def run_task(self, task_id: int, prompt: str) -> str:
@@ -295,8 +299,13 @@ def create_app(cfg: Config | None = None) -> FastAPI:
         reminders = asyncio.create_task(ReminderWatcher(core.announce, core.db).run())
         flusher = asyncio.create_task(core.conversations.run_flusher(cfg.memory.flush_interval_s))
         from iriis.agent.tasks import TaskRunner
+        from iriis.agent.mind import run_calls
         background = [asyncio.create_task(TaskRunner(core.run_task, core.notify, core.db).run()),
-                      asyncio.create_task(core.telegram.run())]
+                      asyncio.create_task(core.telegram.run()),
+                      asyncio.create_task(run_calls(core))]          # rings the alarms and calls the user set
+        if not os.environ.get("IRIIS_NO_MIND"):
+            # her own thinking between conversations; she only ever reaches the user (the owner approved this)
+            background.append(asyncio.create_task(core.mind.run()))
         async with mcp.session_manager.run():
             yield
         reminders.cancel()
@@ -377,6 +386,39 @@ def create_app(cfg: Config | None = None) -> FastAPI:
         return StreamingResponse(sse(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
+
+    @app.get("/v1/settings/autonomy", dependencies=[Depends(require_key)])
+    async def autonomy_get(request: Request):
+        """Whether Iriis thinks and acts on her own between conversations (messages and calls to the user only)."""
+        core: Core = request.app.state.core
+        return {"enabled": await asyncio.to_thread(lambda: core.mind.autonomous)}
+
+    @app.post("/v1/settings/autonomy", dependencies=[Depends(require_key)])
+    async def autonomy_set(request: Request):
+        core: Core = request.app.state.core
+        on = bool((await request.json()).get("enabled"))
+        await asyncio.to_thread(core.mind.set_autonomous, on)
+        return {"enabled": on}
+
+    @app.get("/v1/mind", dependencies=[Depends(require_key)])
+    async def mind_view(request: Request, kind: str = ""):
+        """What she has learned: goals, mood, insights, the user's patterns, people, lessons, skills, open loops."""
+        core: Core = request.app.state.core
+        from iriis.agent.mind import KINDS
+        kinds = (kind,) if kind in KINDS else KINDS
+
+        def load():
+            rows = core.mind.rows(kinds, 400)
+            return {"mood": core.mind.mood(),
+                    "items": [{"id": r[0], "kind": r[1], "text": r[2], "importance": r[3], "created": r[4]} for r in rows]}
+        return await asyncio.to_thread(load)
+
+    @app.delete("/v1/mind/{item_id}", dependencies=[Depends(require_key)])
+    async def mind_forget(item_id: int, request: Request):
+        """Make her forget one thing (deleted, not hidden)."""
+        core: Core = request.app.state.core
+        await asyncio.to_thread(core.db.execute, "DELETE FROM mind WHERE id = ?", (item_id,))
+        return {"ok": True}
 
     @app.post("/v1/confirm", dependencies=[Depends(require_key)])
     async def confirm(req: ConfirmRequest, request: Request):

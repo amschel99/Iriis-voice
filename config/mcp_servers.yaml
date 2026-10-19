@@ -155,9 +155,9 @@ mcpServers:
     command: python
     args: ["-m", "servers.tasks"]
     tier: auto
-    tools: {cancel_task: auto}
-    description: Hand Iriis bigger jobs to do in the background (research, comparisons, drafting, monitoring) and routines that repeat (morning briefing, daily email check); list them and read their reports.
-    keywords: [task, tasks, background, routine, routines, every, daily, morning, briefing, research, compare, comparison, find out, look into, investigate, report, later, monitor, schedule, weekly]
+    tools: {cancel_task: auto, cancel_call: auto}
+    description: Hand Iriis bigger jobs to do in the background (research, comparisons, drafting, monitoring) and routines that repeat (morning briefing, daily email check); list them and read their reports. Phone the user - alarms, wake-up calls, call-me-at reminders (the app rings like a call).
+    keywords: [task, tasks, background, routine, routines, every, daily, morning, briefing, research, compare, comparison, find out, look into, investigate, report, later, monitor, schedule, weekly, alarm, alarms, wake, wake up, call, call me, ring, phone]
 
   google:                # Gmail + Google Calendar (cloud; connect once with: iriis google-login client.json)
     command: python
@@ -204,10 +204,23 @@ mcpServers:
   studio:                # charts, diagrams and documents made in the cloud; sent to Telegram or saved to the PC
     command: python
     args: ["-m", "servers.studio"]
-    env: {TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN}", TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID}"}
+    env: {TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN}", TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID}",
+          VISION_MCP_URL: "${VISION_MCP_URL}", VISION_ACCESS_KEY: "${VISION_ACCESS_KEY}",
+          GROQ_API_KEY: "${GROQ_API_KEY}", GEMINI_API_KEY: "${GEMINI_API_KEY}", PORT: "${PORT}", IRIIS_API_KEY: "${IRIIS_API_KEY}"}
     tier: auto             # making files; send_file goes only to the user's own Telegram
-    description: Make charts and graphs, diagrams (flowcharts, org charts, mind maps, processes) and documents (PDF, Word, Excel, PowerPoint, with charts inside), and send them to the user's Telegram.
-    keywords: [chart, charts, graph, graphs, plot, diagram, diagrams, flowchart, flow, mind map, org chart, visual, visualise, visualize, draw, picture, image, pdf, document, report, slides, presentation, deck, spreadsheet, excel, word, send, telegram, file, files]
+    description: Make charts and graphs, maths plots, hand-drawn sketches and drawings, diagrams (flowcharts, org charts, mind maps, processes) and documents (PDF, Word, Excel, PowerPoint, with pictures inside); take a photo from the live camera; open and read files the user sends (PDFs, documents, pictures, audio, video); send files to Telegram.
+    keywords: [chart, charts, graph, graphs, plot, diagram, diagrams, flowchart, flow, mind map, org chart, visual, visualise, visualize, draw, drawing, sketch, illustrate, explain, function, equation, maths, math, curve, picture, image, photo, pdf, document, report, summary, slides, presentation, deck, spreadsheet, excel, word, send, telegram, file, files, attachment, attached, sent, voice note, audio, video, camera, see, saw]
+
+  hq:                    # Iriis HQ, Amschel's chief of staff (iriis.riftfi.com) over remote MCP; on when the key is set
+    transport: http
+    url: https://iriis.riftfi.com/mcp
+    headers: {Authorization: "Bearer ${IRIIS_HQ_KEY}"}
+    requires_env: [IRIIS_HQ_KEY]
+    needs_internet: true
+    tier: auto             # HQ keeps its own approvals: email only as drafts, LinkedIn messages need his yes
+    tools: {linkedin_outreach: confirm, job_applications: confirm}
+    description: Iriis HQ, the user's chief of staff for all his ventures (Jahazi, Seryn Labs, Rift, consulting, his job search) - ventures' status, goals, numbers and decisions; his documents library; contacts and who to talk to; his promises and to-dos (what's overdue); fundraising rounds and investors; deep research reports; job applications and LinkedIn outreach; how he writes (my_voice). ask_iriis hands HQ a whole question.
+    keywords: [hq, chief of staff, venture, ventures, jahazi, rift, seryn, consulting, job, jobs, job search, application, applications, linkedin, outreach, investor, investors, fundraising, raise, round, pitch, deck, contact, contacts, people, who, talk to, commitment, commitments, promise, promised, todo, to-do, overdue, library, document, documents, research, report, capital, intel, inbox, today, priorities, my voice, write as me]
 
   bench:                 # Seryn Vision (the bench camera assistant) over remote MCP; on when both are set
     transport: http

@@ -99,6 +99,7 @@ class Agent:
         self.router = ToolRouter(cfg.tool_routing.max_tools, cfg.tool_routing.method)
         self.history = ConversationHistory(cfg.llm.history_max_tokens)
         self.memory_facts = memory_facts or (lambda: [])
+        self.mind = None          # iriis.agent.mind.Mind: her own memory, lessons, goals and mood (set by the core)
         # Persistent conversation: reload recent context (survives restarts and redeploys).
         self.store = store
         self.session_id = session_id
@@ -125,7 +126,8 @@ class Agent:
             conversation_summary=self.summary, last_active=self.last_active,
             casting=self.cfg.tts.casting(), voice_style=self._voice_style())
         note = getattr(self, "tools_note", "")
-        return {"role": "system", "content": prompt + ("\n\n" + note if note else "")}
+        mind = self.mind.context(getattr(self, "_query", "")) if self.mind else ""
+        return {"role": "system", "content": prompt + ("\n\n" + mind if mind else "") + ("\n\n" + note if note else "")}
 
     def _voice_style(self) -> str:
         """Which tag syntax she should write: only what the voice engine in use can actually perform."""
@@ -299,6 +301,7 @@ class Agent:
             await cb.say(msg)
             return result
 
+        self._query = user_text
         tools = await self._select_tools(user_text)
         known = {t["function"]["name"] for t in tools}
         if self.tools and sum(len(s["tools"]) for s in self.tools.servers_catalog().values()) > len(tools):
@@ -413,9 +416,21 @@ class Agent:
         else:
             await cb.say("Sorry, I couldn't finish that within my step limit.")
 
+        # Files she made this turn stay attached to her reply ([file:N]), so the app can show them in the history.
+        made = []
+        for c in result.tool_calls:
+            for fid in re.findall(r"\bready: file (\d+)\b", str(c.get("result", ""))):
+                if fid not in made:
+                    made.append(fid)
+        saved = (result.text or "(no reply)") + "".join(f"\n[file:{f}]" for f in made)
         self.history.extend(turn)
-        self._save(turn[0]["content"], result.text or "(no reply)")
+        self._save(turn[0]["content"], saved)
         self.last_active = time.time()
         self._maybe_summarize()
+        if self.mind:
+            try:
+                self.mind.after_turn(self.session_id, turn[0]["content"], result.text, result.tool_calls)
+            except Exception:  # noqa: BLE001  (reflection is best effort)
+                pass
         result.timings["total_ms"] = (time.perf_counter() - t0) * 1000
         return result

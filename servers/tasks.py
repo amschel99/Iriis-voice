@@ -175,5 +175,47 @@ def run_task_now(task_id: int) -> str:
     return f"Running task {task_id}, {rows[0][0]}, now." if rows else f"Task {task_id} is already running or doesn't exist."
 
 
+# ---------------------------------------------------------------------------- phone calls and alarms
+@mcp.tool()
+def schedule_call(when: str, reason: str, repeat: str = "", opening: str = "") -> str:
+    """Phone the user: the Iriis app rings like an incoming call (and a notification vibrates) and when they answer
+    you talk. Use it for alarms ("wake me at 6:30"), important reminders, and whenever YOU judge a call is better
+    than a message. when: "now", "in 20 minutes", "06:30", "tomorrow 7am". repeat: "daily 06:30", "weekdays 6am".
+    reason: why you're calling (shown on the ringing screen). opening: optional first words when they pick up;
+    leave it empty to decide what to say at that moment (better for alarms: you'll know the weather, the day...)."""
+    reason = reason.strip()[:300] or "Call from Iriis"
+    rep = parse_repeat(repeat)
+    now = time.time()
+    if when.strip().lower() in ("", "now", "right now", "immediately", "asap"):
+        at = now
+    elif rep and when.strip().lower() in (repeat.strip().lower(), "daily", "weekdays", "every day"):
+        at = next_run(rep, now)
+    else:
+        at = parse_when(when).timestamp()
+    cid = get_db().insert("INSERT INTO calls (at, reason, opening, status, repeat, source, created) "
+                          "VALUES (?, ?, ?, 'scheduled', ?, 'user', ?)", (at, reason, opening.strip()[:600], rep, now))
+    when_s = "now" if at <= now + 5 else _fmt(at)
+    return f"Call {cid} set for {when_s}" + (f", repeating {_say_repeat(rep)}" if rep else "") + f": {reason}."
+
+
+@mcp.tool()
+def list_calls() -> str:
+    """Alarms and calls that are coming up, and the last few that rang (answered, missed, declined)."""
+    rows = get_db().execute("SELECT id, at, reason, status, repeat FROM calls WHERE status = 'scheduled' "
+                            "OR at > ? ORDER BY at LIMIT 20", (time.time() - 2 * 86400,))
+    if not rows:
+        return "No alarms or calls set."
+    return "\n".join(f"call {i}: {_fmt(at)} {reason} [{st}]" + (f" ({_say_repeat(r)})" if r else "")
+                     for i, at, reason, st, r in rows)
+
+
+@mcp.tool()
+def cancel_call(call_id: int) -> str:
+    """Cancel an alarm or a planned call (a repeating alarm stops for good)."""
+    rows = get_db().execute("UPDATE calls SET status = 'cancelled' WHERE id = ? AND status IN ('scheduled', 'ringing') "
+                            "RETURNING reason", (int(call_id),))
+    return f"Cancelled call {call_id}: {rows[0][0]}." if rows else f"There's no upcoming call {call_id}."
+
+
 if __name__ == "__main__":
     mcp.run()

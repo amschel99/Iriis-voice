@@ -9,6 +9,7 @@ import pytest
 os.environ["IRIIS_NO_DEFAULT_APP"] = "1"
 os.environ["IRIIS_API_KEY"] = "test-key"
 os.environ["IRIIS_DESKTOP_TOKEN"] = "desk-token"
+os.environ["IRIIS_NO_MIND"] = "1"          # no reflection calls: these tests script the LLM call by call
 
 from fastapi.testclient import TestClient  # noqa: E402
 
