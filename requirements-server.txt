@@ -7,6 +7,7 @@ python-multipart==0.0.32
 httpx==0.28.1
 ddgs==9.16.0             # web_search (cloud copy, used while the desktop is offline)
 pypdf==6.21.1
+pywebpush==2.5.0          # app notifications (Web Push, MPL-2.0)
 # studio (cloud charts, diagrams, documents): all open source
 matplotlib==3.11.2
 graphviz==0.21

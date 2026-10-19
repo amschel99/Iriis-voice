@@ -34,6 +34,8 @@ _TABLES = {
              "result TEXT, created {real} NOT NULL",
     # Small settings that must survive redeploys and new computers (e.g. the Google OAuth token).
     "kv": "key TEXT PRIMARY KEY, value TEXT NOT NULL, updated {real} NOT NULL",
+    # phones/laptops that asked for notifications (Web Push subscriptions from the Iriis app)
+    "push_subs": "endpoint TEXT PRIMARY KEY, data TEXT NOT NULL, created {real} NOT NULL",
     # Charts, diagrams and documents the cloud studio made (base64), so they can go to Telegram or any computer.
     "files": "id {pk}, name TEXT NOT NULL, mime TEXT NOT NULL, size INTEGER NOT NULL, data TEXT NOT NULL, "
              "created {real} NOT NULL",

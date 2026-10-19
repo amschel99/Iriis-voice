@@ -224,6 +224,21 @@ python -m iriis.desktop --server wss://<domain> --voice
 - **Files.** Only folders listed in `files.allowed_dirs` are visible (by default Documents, Desktop
   and Downloads).
 
+## The Iriis app (phone and laptop)
+
+Open your Iriis address (for example `https://iriis-voice-production.up.railway.app`) and enter your `IRIIS_API_KEY` once. Then install it to your home screen:
+- **Android/desktop:** ☰ → Settings → Install, or the browser menu → Install app.
+- **iPhone:** Safari → Share → Add to Home Screen.
+
+What it does:
+- Chat with streaming replies and full history. Links, charts and documents appear inside the chat.
+- **Yes / No / Yes to all** buttons when she asks before acting.
+- Hold 🎤 to talk, or double-tap it for hands-free conversation. She can read replies aloud with the phone's voice or her own.
+- Notifications: reminders, finished tasks and routines on the lock screen (☰ → Settings → Notifications). They use free Web Push; the keys are made automatically and kept in the database.
+- ☰ → **Tasks** (running, scheduled, done, with reports; run now or stop), **Status** (brain, your computer, every skill), **Guide** (step by step).
+
+It's the same Iriis as voice, `iriis ask` and Telegram, with one shared conversation (`owner`).
+
 ## 4. Use Iriis from other tools
 
 There is a machine-readable guide at **`https://<domain>/llms.txt`** and an OpenAPI UI at `/docs`.

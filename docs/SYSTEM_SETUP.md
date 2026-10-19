@@ -208,6 +208,10 @@ Then point the others at it:
 
 ### Iriis
 
+- **The app (easiest):** open the Iriis address on your phone, enter the key once, and install it (Android: Install; iPhone: Share → Add to Home Screen).
+  - Type, or hold 🎤 to talk; double-tap 🎤 for hands-free.
+  - Tap **Yes / No / Yes to all** when she asks before acting.
+  - ☰ → **Tasks** shows background jobs and routines; ☰ → **Settings** turns on notifications; ☰ → **Guide** walks you through everything.
 - **Voice:** say "Hey Jarvis…". In a terminal, use `iriis ask "…"`. On Telegram, message the bot (text or voice notes).
 - **Example requests:**
   - "Look into X and report back" (a background task)

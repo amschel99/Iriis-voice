@@ -85,9 +85,17 @@ class Core:
         return done["text"]
 
     async def notify(self, spoken: str, full: str = "") -> None:
-        """Task reports: a short line out loud, the whole report in Telegram."""
-        await self.announce(spoken, telegram=False)
+        """Task reports: a short line out loud, the whole report in Telegram, a notification on every device."""
+        await self.announce(spoken, telegram=False, push=False)
         await self.telegram.broadcast(full or spoken)
+        await self.push(spoken)
+
+    async def push(self, text: str) -> None:
+        from iriis.server.webapp import push_all
+        try:
+            await push_all(self.db, "Iriis", text)
+        except Exception as e:  # noqa: BLE001  (notifications are best effort)
+            log.warning("push failed: %s", e)
 
     async def start(self) -> None:
         ok, msg = await self.llm.health()
@@ -104,10 +112,12 @@ class Core:
         for p in self.problems:
             log.warning(p)
 
-    async def announce(self, text: str, telegram: bool = True) -> None:
-        """Reminders and timers go to the desktop, every open voice socket and Telegram."""
+    async def announce(self, text: str, telegram: bool = True, push: bool = True) -> None:
+        """Reminders and timers go to the desktop, every open voice socket, Telegram and app notifications."""
         if telegram:
             await self.telegram.broadcast(text)
+        if push:
+            await self.push(text)
         await self.desktop.send({"type": "announce", "text": text})
         for ws in list(self.voice_sockets):
             try:
@@ -140,7 +150,15 @@ def _token_from(headers, query) -> str:
     auth = headers.get("authorization", "")
     if auth.lower().startswith("bearer "):
         return auth[7:].strip()
-    return query.get("token", "") or headers.get("x-api-key", "")
+    tok = query.get("token", "") or headers.get("x-api-key", "")
+    if not tok and headers.get("cookie"):          # the Iriis app logs in once and keeps an HttpOnly cookie
+        from http.cookies import SimpleCookie
+        try:
+            c = SimpleCookie(headers.get("cookie"))
+            tok = c["iriis_key"].value if "iriis_key" in c else ""
+        except Exception:  # noqa: BLE001
+            tok = ""
+    return tok
 
 
 async def require_key(request: Request) -> None:
@@ -301,9 +319,13 @@ def create_app(cfg: Config | None = None) -> FastAPI:
         base = str(request.base_url).rstrip("/")
         return (STATIC / "llms.txt").read_text(encoding="utf-8").replace("{BASE_URL}", base)
 
-    @app.get("/", response_class=PlainTextResponse)
+    @app.get("/", include_in_schema=False)
     async def root():
-        return "Iriis is running. API guide: /llms.txt  OpenAPI: /docs  MCP: /mcp"
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse("/app", status_code=307)       # the Iriis app (API guide: /llms.txt, OpenAPI: /docs)
+
+    from iriis.server import webapp
+    app.include_router(webapp.setup(require_key))
 
     # ------------------------------------------------------------------ REST
 
