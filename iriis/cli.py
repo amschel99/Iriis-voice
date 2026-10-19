@@ -365,40 +365,46 @@ def cmd_ask(args) -> None:
     body = {"message": _read_text(args), "session_id": args.session, "stream": True, "speak": args.speak}
     clips: list[bytes] = []
     printed_name = False
-    with httpx.Client(timeout=httpx.Timeout(180, connect=10)) as client:
-        with client.stream("POST", url + "/v1/chat", json=body, headers=_auth()) as resp:
-            if resp.status_code != 200:
-                sys.exit(f"{RED}HTTP {resp.status_code}{RESET}: {resp.read()[:300]!r}")
-            event = None
-            for line in resp.iter_lines():
-                if line.startswith("event:"):
-                    event = line[6:].strip()
-                    continue
-                if not line.startswith("data:"):
-                    continue
-                ev = json.loads(line[5:])
-                if event == "sentence":
-                    if not printed_name:
-                        print(f"{PURPLE}{BOLD}Iriis:{RESET} ", end="")
-                        printed_name = True
-                    print(ev["text"], end=" ", flush=True)
-                elif event == "tool" and args.verbose:
-                    print(f"\n  {DIM}{ev['text']}{RESET}")
-                elif event == "screen":
-                    print(f"\n  {BOLD}On screen:{RESET} {ev['text']}")
-                elif event == "audio":
-                    clips.append(base64.b64decode(ev["data"]))
-                elif event == "confirm":
-                    print(f"\n{YELLOW}{ev['question']}{RESET}")
-                    reply = input("yes/no> ")
-                    client.post(url + "/v1/confirm", headers=_auth(),
-                                json={"session_id": ev["session_id"], "id": ev["id"], "text": reply})
-                elif event == "error":
-                    print(f"\n{RED}{ev.get('message')}{RESET}")
-                elif event == "done":
-                    print()
-                    if args.verbose and ev.get("timings"):
-                        print(f"{DIM}{ev['timings']}{RESET}")
+    try:
+        with httpx.Client(timeout=httpx.Timeout(180, connect=10)) as client:
+            with client.stream("POST", url + "/v1/chat", json=body, headers=_auth()) as resp:
+                if resp.status_code != 200:
+                    sys.exit(f"{RED}HTTP {resp.status_code}{RESET}: {resp.read()[:300]!r}")
+                event = None
+                for line in resp.iter_lines():
+                    if line.startswith("event:"):
+                        event = line[6:].strip()
+                        continue
+                    if not line.startswith("data:"):
+                        continue
+                    ev = json.loads(line[5:])
+                    if event == "sentence":
+                        if not printed_name:
+                            print(f"{PURPLE}{BOLD}Iriis:{RESET} ", end="")
+                            printed_name = True
+                        print(ev["text"], end=" ", flush=True)
+                    elif event == "tool" and args.verbose:
+                        print(f"\n  {DIM}{ev['text']}{RESET}")
+                    elif event == "screen":
+                        print(f"\n  {BOLD}On screen:{RESET} {ev['text']}")
+                    elif event == "audio":
+                        clips.append(base64.b64decode(ev["data"]))
+                    elif event == "confirm":
+                        print(f"\n{YELLOW}{ev['question']}{RESET}")
+                        reply = input("yes/no> ")
+                        client.post(url + "/v1/confirm", headers=_auth(),
+                                    json={"session_id": ev["session_id"], "id": ev["id"], "text": reply})
+                    elif event == "error":
+                        print(f"\n{RED}{ev.get('message')}{RESET}")
+                    elif event == "done":
+                        print()
+                        if args.verbose and ev.get("timings"):
+                            print(f"{DIM}{ev['timings']}{RESET}")
+    except httpx.HTTPError as e:
+        # Usually the brain restarting (a Railway redeploy or a variable change) mid-reply.
+        print(f"\n{YELLOW}The connection to my brain dropped mid-reply ({e.__class__.__name__}).{RESET} "
+              "She may be restarting: wait a minute and ask again (iriis status shows when she's back).")
+        sys.exit(1)
     for clip in clips:
         _play_wav(clip)
 
