@@ -22,6 +22,8 @@ hands on your own computer (MCP tools). Other apps can talk to it over REST/SSE,
    Offline fallback: `python -m iriis --offline` runs everything on the PC (Ollama).
 ```
 
+**Setting up everything on a new machine (Iriis, Seryn Twin, Seryn Vision):** see [SYSTEM_SETUP.md](https://github.com/amschel99/Iriis-voice/blob/main/docs/SYSTEM_SETUP.md).
+
 ## Contents
 - [Quick start (cloud + desktop)](#1-quick-start)
 - [The `iriis` command](#the-iriis-command-git-bash)
