@@ -79,3 +79,42 @@ def test_audit_log_writes_jsonl(tmp_path):
 def test_describe_call():
     s = describe_call("files__move_file", {"source": "a.txt", "destination": "b.txt"})
     assert "move file" in s and "a.txt" in s and s.endswith("Shall I go ahead?")
+
+
+def test_page_scripts_are_asked_in_plain_words():
+    from iriis.agent.permissions import describe_call
+    q = describe_call("browser__browser_evaluate", {"function": "() => { const rows = document.querySelectorAll('x') }"})
+    assert "querySelector" not in q and "script" in q and "10 minutes" in q
+
+
+def test_one_yes_covers_repeat_page_scripts(tmp_path):
+    import asyncio
+
+    from iriis.agent.loop import Agent, TurnCallbacks
+    from iriis.config import Config, MCPServerConfig
+    from iriis.llm.base import ToolCall
+
+    class Tools:
+        def servers_catalog(self):
+            return {}
+
+        async def call_tool(self, name, args, confirmed=False):
+            return "ok"
+
+    cfg = Config()
+    cfg.permissions.audit_log = str(tmp_path / "a.jsonl")
+    pm = PermissionManager(cfg, [MCPServerConfig(name="browser", tier="auto", tools={"browser_evaluate": "confirm"})])
+    agent = Agent(cfg, None, Tools(), pm)
+    asked = []
+
+    async def confirm(q):
+        asked.append(q)
+        return "yes"
+
+    async def say(_):
+        pass
+    cb = TurnCallbacks(say=say, confirm=confirm)
+    known = {"browser__browser_evaluate"}
+    for _ in range(3):
+        assert asyncio.run(agent._execute(ToolCall("browser__browser_evaluate", {"function": "() => 1"}, "x"), known, cb)) == "ok"
+    assert len(asked) == 1

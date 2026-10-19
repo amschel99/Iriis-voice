@@ -192,8 +192,23 @@ def is_affirmative(utterance: str, confirm_words: list[str]) -> bool:
     return any(f" {w} " in padded for w in confirm_words)
 
 
+PLAIN = {   # confirmations in everyday words (no code read out)
+    "browser__browser_evaluate": "Shall I run a small script on the open web page to read it or work with it? "
+                                 "A yes covers this site for the next 10 minutes.",
+    "browser__browser_handle_dialog": "The web page is showing a pop-up. Shall I answer it?",
+    "browser__browser_file_upload": "Shall I upload {paths} from your computer to this web page?",
+}
+STICKY_S = 600     # a yes to these covers repeats for 10 minutes (reading a page often takes several scripts)
+STICKY = {"browser__browser_evaluate"}
+
+
 def describe_call(tool: str, args: dict[str, Any]) -> str:
     """A short spoken description of exactly what a tool call will do."""
+    if tool in PLAIN:
+        try:
+            return PLAIN[tool].format(**{k: (", ".join(map(str, v)) if isinstance(v, list) else v) for k, v in args.items()})
+        except (KeyError, IndexError):
+            return PLAIN[tool].split("{")[0].rstrip() + "?"
     server, _, bare = tool.partition("__")
     action = bare.replace("_", " ") or tool
     parts = []

@@ -11,7 +11,7 @@ from typing import Any, Awaitable, Callable, Protocol
 
 from iriis.agent.conversations import OWNER_SESSION, SUMMARY_PROMPT, ConversationStore, format_dialogue
 from iriis.agent.memory import ConversationHistory
-from iriis.agent.permissions import AuditLog, PermissionManager, describe_call, is_affirmative, redact_secrets
+from iriis.agent.permissions import STICKY, STICKY_S, AuditLog, PermissionManager, describe_call, is_affirmative, redact_secrets
 from iriis.agent.tool_router import ToolRouter
 from iriis.config import Config
 from iriis.llm.base import LLMClient, ToolCall
@@ -225,11 +225,17 @@ class Agent:
             self.audit.record(tool=call.name, args=args, tier="blocked", confirmed=None, executed=False, error=decision.reason)
             cb.show("tool", f"[blocked] {call.name} {args}: {decision.reason}")
             return f"BLOCKED: this action is not allowed ({decision.reason}). Tell the user it is blocked; do not retry."
-        if decision.tier == "confirm":
+        sticky = getattr(self, "_approved", {})
+        if decision.tier == "confirm" and sticky.get(call.name, 0) > time.time():
+            confirmed = True                      # the user said yes to this kind of action a few minutes ago
+            cb.show("tool", f"[already approved] {call.name}")
+        elif decision.tier == "confirm":
             question = describe_call(call.name, args)
             cb.show("tool", f"[confirm?] {call.name} {json.dumps(args, default=str)[:300]}")
             reply = await cb.confirm(question)
             confirmed = is_affirmative(reply, self.cfg.permissions.confirm_words)
+            if confirmed and call.name in STICKY:
+                self._approved = {**sticky, call.name: time.time() + STICKY_S}
             if not confirmed:
                 self.audit.record(tool=call.name, args=args, tier="confirm", confirmed=False, executed=False)
                 return "DECLINED: the user did not confirm, so nothing was done. Acknowledge briefly; do not retry."
