@@ -217,8 +217,13 @@ mcpServers:
     headers: {Authorization: "Bearer ${IRIIS_HQ_KEY}"}
     requires_env: [IRIIS_HQ_KEY]
     needs_internet: true
-    tier: auto             # HQ keeps its own approvals: email only as drafts, LinkedIn messages need his yes
-    tools: {linkedin_outreach: confirm, job_applications: confirm}
+    tier: auto             # reading is free; anything that reaches people or changes the world asks first
+    tools: {linkedin_outreach: confirm, job_applications: confirm, x_social: confirm, send_email: confirm,
+            send_draft: confirm, cancel_draft: confirm, send_for_signature: confirm, cancel_calendly_meeting: confirm,
+            close_case_and_reply_to_user: confirm, notify_affected_users: confirm, notify_provider_group: confirm,
+            notify_team: confirm, email_admin_team: confirm, escalate_to_team: confirm, flag_provider_issue: confirm,
+            open_ticket: confirm, run_routine: confirm, forget_memory: confirm, save_teaching: confirm,
+            retire_teaching: confirm}
     description: Iriis HQ, the user's chief of staff for all his ventures (Jahazi, Seryn Labs, Rift, consulting, his job search) - ventures' status, goals, numbers and decisions; his documents library; contacts and who to talk to; his promises and to-dos (what's overdue); fundraising rounds and investors; deep research reports; job applications and LinkedIn outreach; how he writes (my_voice). ask_iriis hands HQ a whole question.
     keywords: [hq, chief of staff, venture, ventures, jahazi, rift, seryn, consulting, job, jobs, job search, application, applications, linkedin, outreach, investor, investors, fundraising, raise, round, pitch, deck, contact, contacts, people, who, talk to, commitment, commitments, promise, promised, todo, to-do, overdue, library, document, documents, research, report, capital, intel, inbox, today, priorities, my voice, write as me]
 

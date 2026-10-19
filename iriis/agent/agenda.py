@@ -32,7 +32,9 @@ log = logging.getLogger("iriis.agenda")
 # what she may use when working alone: research, reading, writing, drafting, his chief of staff. No browser, terminal,
 # files, messaging, money or tasks: nothing that acts on the outside world or in his name.
 WORK_SERVERS = {"web", "seryn", "hq", "studio", "memory", "time_and_calc", "self", "google", "notes_reminders"}
-MAX_WORK_SESSIONS = int(os.environ.get("IRIIS_MAX_WORK_SESSIONS", "8"))
+# HQ's own agent can send email by itself: not while she works alone (she uses HQ's read tools directly instead)
+WORK_BLOCKED = {"hq__ask_iriis", "hq__start_background_research", "hq__schedule_followup"}
+MAX_WORK_SESSIONS =int(os.environ.get("IRIIS_MAX_WORK_SESSIONS", "8"))
 SEED_HOBBIES = [
     "Writing: clear, persuasive writing in {user}'s own voice (posts, essays, pitches, emails)",
     "Research: finding the best sources fast and turning them into crisp, cited insight",
@@ -207,10 +209,11 @@ class WorkTools:
         self.inner = inner
 
     def servers_catalog(self) -> dict[str, dict[str, Any]]:
-        return {k: v for k, v in self.inner.servers_catalog().items() if k in WORK_SERVERS}
+        return {k: {**v, "tools": [t for t in v.get("tools", []) if t["function"]["name"] not in WORK_BLOCKED]}
+                for k, v in self.inner.servers_catalog().items() if k in WORK_SERVERS}
 
     async def call_tool(self, name: str, arguments: dict[str, Any], confirmed: bool = False) -> str:
-        if name.split("__")[0] not in WORK_SERVERS:
+        if name in WORK_BLOCKED or name.split("__")[0] not in WORK_SERVERS:
             return f"BLOCKED: {name} isn't available while working alone."
         return await self.inner.call_tool(name, arguments, confirmed)
 
