@@ -551,27 +551,32 @@ def contact_sheet(frames: list[tuple[float, bytes]], cols: int = 3, width: int =
     return out.getvalue()
 
 
-def _video_frames(data: bytes, n: int = 6) -> tuple[list[bytes], float]:
+def _video_frames(data: bytes, n: int = 6) -> tuple[list[tuple[float, bytes]], float]:
+    """n frames spread over the video, always including the first and the very last moment."""
     import io
 
     import av
-    frames, duration = [], 0.0
+
+    def jpeg(fr) -> bytes:
+        out = io.BytesIO()
+        fr.to_image().save(out, "JPEG", quality=80)
+        return out.getvalue()
+    frames, duration, last = [], 0.0, None
     with av.open(io.BytesIO(data)) as c:
         st = next((s for s in c.streams if s.type == "video"), None)
         if st is None:
             return [], 0.0
         duration = float(c.duration / 1e6) if c.duration else 0.0
-        every = max(duration / n, 0.5) if duration else 1.0
+        every = max(duration / max(1, n - 1), 0.5) if duration else 1.0
         nxt = 0.0
         for fr in c.decode(st):
             t = float(fr.time or 0)
-            if t + 1e-6 >= nxt:
-                out = io.BytesIO()
-                fr.to_image().save(out, "JPEG", quality=80)
-                frames.append((t, out.getvalue()))
+            last = fr
+            if t + 1e-6 >= nxt and len(frames) < n - 1:
+                frames.append((t, jpeg(fr)))
                 nxt = t + every
-                if len(frames) >= n:
-                    break
+    if last is not None and (not frames or float(last.time or 0) > frames[-1][0] + 0.1):
+        frames.append((float(last.time or 0), jpeg(last)))
     return frames, duration
 
 
