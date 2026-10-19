@@ -85,7 +85,8 @@ class MCPManager:
                 raise ValueError(f"{url} is not on localhost; set needs_internet: true to allow it")
             if not cfg.headers:
                 return url
-            headers = {k: os.path.expandvars(v) for k, v in cfg.headers.items()}
+            # strip: a key pasted into Railway with a trailing newline/space is an illegal header value
+            headers = {k: " ".join(os.path.expandvars(v).split()) for k, v in cfg.headers.items()}
             missing = [k for k, v in headers.items() if "$" in v or v.strip().lower() in ("bearer", "")]
             if missing:
                 raise ValueError(f"header {missing[0]} needs an environment variable that isn't set: {cfg.headers[missing[0]]}")
@@ -119,7 +120,9 @@ class MCPManager:
         except Exception as e:  # noqa: BLE001
             while isinstance(e, BaseExceptionGroup) and e.exceptions:    # show the real cause, not "TaskGroup"
                 e = e.exceptions[0]
-            conn.error = f"{e.__class__.__name__}: {e}"[:300]
+            import re as _re
+            msg = _re.sub(r"(?i)(bearer\s+)\S+", r"\1***", str(e))         # never show a key in status pages or logs
+            conn.error = f"{e.__class__.__name__}: {msg}"[:300]
             log.warning("MCP server %s failed: %s", conn.cfg.name, conn.error)
         finally:
             conn.client = None
