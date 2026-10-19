@@ -59,3 +59,17 @@ Client -> server:
 Server -> client:
 - `ready`, `transcript {text, stt_ms}`, `sentence {text}`, `tool`, `screen`, `confirm {id, question}`, `announce {text}` (reminders and timers), `interrupted`, `done {text, timings}`, `error`.
 - `audio {seq, sample_rate: 24000, format: "pcm_s16le", bytes, text}`, immediately followed by one binary frame holding that many bytes of PCM16 mono audio. Play the frames in seq order.
+
+## App and media API (the Iriis app at /app uses these; all need the key)
+
+- `GET /v1/history?limit=100&session=owner` -> `[{id, role, content, ts}]`, oldest first. `POST /v1/history/delete {"ids": [..], "session": "owner"}` deletes messages permanently (and from her live context).
+- `POST /v1/upload` multipart `file` (25 MB) -> `{id, name, mime, size}`. Then send it to her in a chat message as a line `[attachment file:42 "name.pdf" application/pdf 120 KB]` followed by your text; she opens it (documents read, pictures looked at, audio/video watched and listened to). Voice notes: `[attachment file:43 "voice note.webm" audio/webm 31 KB] [voice] <transcript>`.
+- Files she makes (charts, plots, sketches, PDFs, photos) appear in her replies as lines `[file:12]`. `GET /v1/files/{id}` (bytes), `GET /v1/files/{id}/meta` -> `{id, name, mime, size, created}`, `GET /v1/media/{id}` (HTTP Range, for audio/video).
+- `GET /v1/linkpreview?url=` -> `{url, title, description, image, site}` (public http/https only).
+- Calls and alarms (she phones the user; the app rings): `GET /v1/calls?status=ringing`, `GET /v1/calls/upcoming`, `POST /v1/calls/{id}/answer` -> `{id, reason, opening}`, `POST /v1/calls/{id}/decline`, `POST /v1/calls/{id}/cancel`. When `opening` is empty, send `[call answered] <reason>` as a chat message and she speaks first.
+- Her own mind: `GET /v1/mind` -> `{mood, items: [{id, kind, text, importance, created}]}` (kinds: goal, insight, pattern, observation, person, lesson, skill, loop); `DELETE /v1/mind/{id}` makes her forget one thing. `GET/POST /v1/settings/autonomy {"enabled": bool}`: whether she thinks and reaches out on her own (to the owner only; she never contacts anyone else by herself).
+- Camera mode: `wss://<host>/v1/camera?token=<key>` relays to Seryn Vision (binary JPEG frames up; `hello`, `perception`, `answer`, `alert`, `state` down). After each answer her main brain may follow up: `brain_thinking {text}`, `brain {say, files: [{id, name, type}]}`, `brain_confirm {id, question, session_id}` (answer with `POST /v1/confirm`), `brain_done`.
+
+## Connected services
+
+She also reaches Seryn Twin, Seryn Vision and Iriis HQ (the owner's chief of staff, iriis.riftfi.com) with her own keys; integrators don't need those keys to use her.
