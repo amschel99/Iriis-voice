@@ -30,6 +30,7 @@ class Session:
     current: asyncio.Task | None = None
     echo: SelfEcho = field(default_factory=SelfEcho)   # what she said recently (to ignore her own voice)
     heard_seq: int | None = None    # set by the client on interrupt: last audio chunk the user heard
+    questions: dict[str, str] = field(default_factory=dict)   # confirmation id -> question (for a reopened app)
 
     def resolve_confirmation(self, confirm_id: str | None, reply: str) -> bool:
         if not self.pending:
@@ -198,6 +199,7 @@ async def run_turn(session: Session, text: str, emit: Emit, *, speech=None, spea
         cid = uuid.uuid4().hex[:10]
         fut: asyncio.Future = asyncio.get_running_loop().create_future()
         session.pending[cid] = fut
+        session.questions[cid] = question
         await emit({"type": "confirm", "id": cid, "question": question, "session_id": session.id}, None)
         if worker:
             await tts_q.put((question, True))
@@ -207,6 +209,7 @@ async def run_turn(session: Session, text: str, emit: Emit, *, speech=None, spea
             return ""
         finally:
             session.pending.pop(cid, None)
+            session.questions.pop(cid, None)
 
     def show(kind: str, text: str) -> None:
         asyncio.get_running_loop().create_task(emit({"type": kind, "text": text}, None))

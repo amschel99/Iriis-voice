@@ -33,6 +33,7 @@ from iriis.server.speech import Speech, decode_audio_file, from_pcm16, wav_bytes
 from iriis.storage import get_db
 
 log = logging.getLogger("iriis.server")
+_BACKGROUND: set = set()     # chat turns still running after their app closed
 STATIC = Path(__file__).parent / "static"
 
 
@@ -264,6 +265,8 @@ class ChatRequest(BaseModel):
     stream: bool = True
     speak: bool = Field(False, description="also return spoken audio (base64 WAV per sentence)")
     voice: str | None = None
+    background: bool = Field(False, description="keep working if the client disconnects (the reply is saved to the "
+                                                "conversation and a notification is sent when it's done)")
 
 
 class ConfirmRequest(BaseModel):
@@ -358,14 +361,24 @@ def create_app(cfg: Config | None = None) -> FastAPI:
             return done
 
         queue: asyncio.Queue[dict | None] = asyncio.Queue()
+        gone = {"yes": False}           # the app was closed while she was still working
 
         async def emit(ev, _audio):
+            if gone["yes"]:
+                if ev.get("type") == "confirm":         # she needs a yes and nobody is looking: ask on the phone
+                    await core.push(f"Iriis needs your OK: {ev['question']}")
+                return
             await queue.put(ev)
 
         async def runner():
             try:
-                await run_turn(session, req.message, emit, speech=core.speech, speak=req.speak,
-                               audio_format="wav_b64", voice=req.voice, confirm_timeout=core.cfg.server.confirm_timeout_s)
+                done = await run_turn(session, req.message, emit, speech=core.speech, speak=req.speak and not gone["yes"],
+                                      audio_format="wav_b64", voice=req.voice,
+                                      confirm_timeout=600 if req.background else core.cfg.server.confirm_timeout_s)
+                if gone["yes"] and (done.get("text") or "").strip():
+                    await core.push(done["text"].strip()[:220])          # finished while the app was closed
+            except asyncio.CancelledError:
+                raise
             except Exception as e:  # noqa: BLE001
                 log.exception("chat turn failed")
                 await queue.put({"type": "error", "message": str(e)})
@@ -373,6 +386,8 @@ def create_app(cfg: Config | None = None) -> FastAPI:
                 await queue.put(None)
 
         task = asyncio.create_task(runner())
+        _BACKGROUND.add(task)
+        task.add_done_callback(_BACKGROUND.discard)
 
         async def sse():
             yield f"event: session\ndata: {json.dumps({'session_id': session.id})}\n\n"
@@ -381,11 +396,24 @@ def create_app(cfg: Config | None = None) -> FastAPI:
                     yield f"event: {ev['type']}\ndata: {json.dumps(ev, default=str)}\n\n"
             finally:
                 if not task.done():
-                    task.cancel()   # client went away = interrupt
+                    if req.background:
+                        gone["yes"] = True      # app closed: she carries on, saves the reply and notifies
+                    else:
+                        task.cancel()           # client went away = interrupt
 
         return StreamingResponse(sse(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
+
+    @app.get("/v1/sessions/{session_id}/state", dependencies=[Depends(require_key)])
+    async def session_state(session_id: str, request: Request):
+        """Is she still working on this conversation, and is she waiting for a yes? (for an app that reopens)"""
+        core: Core = request.app.state.core
+        s = core.sessions.sessions.get(session_id)
+        if not s:
+            return {"busy": False, "pending": []}
+        return {"busy": s.lock.locked(),
+                "pending": [{"id": i, "question": q, "session_id": session_id} for i, q in s.questions.items()]}
 
     @app.get("/v1/settings/autonomy", dependencies=[Depends(require_key)])
     async def autonomy_get(request: Request):

@@ -65,3 +65,21 @@ def test_brain_follows_up_when_more_is_wanted(monkeypatch, tmp_path):
     prompt = llm.seen[0][-1]["content"]
     assert "summarise what you see in a pdf" in prompt and "A fridge and two cold packs" in prompt
     assert history[-1]["content"].startswith("I've written it up for you.")
+
+
+def test_background_turn_survives_the_app_closing(monkeypatch, tmp_path):
+    from tests.test_server import AUTH
+    client, _ = make_client(monkeypatch, ["Here is the long answer."], tmp_path)
+    pushed = []
+
+    async def push(text):
+        pushed.append(text)
+    with client:
+        client.app.state.core.push = push
+        r = client.post("/v1/chat", headers=AUTH, json={"message": "research this", "session_id": "owner", "stream": True,
+                                                        "background": True})
+        assert r.status_code == 200
+        st = client.get("/v1/sessions/owner/state", headers=AUTH).json()
+        assert st == {"busy": False, "pending": []}
+        h = client.get("/v1/history", headers=AUTH).json()
+        assert h[-1]["content"].startswith("Here is the long answer")

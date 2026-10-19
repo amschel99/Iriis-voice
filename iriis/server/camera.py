@@ -179,7 +179,12 @@ def setup(require_key, ws_authorised, api_key_env: str, core_ref):
                     continue
                 try:
                     d = json.loads(m)
-                    if d.get("type") == "answer" and not d.get("quiet") and not d.get("step_check"):
+                    if d.get("type") == "answer" and d.get("noticed") and not d.get("quiet"):
+                        q = f"(written in view) {d.get('question', '')}"   # she read a question and answered it
+                        remember("user", q)
+                        remember("assistant", d.get("say", ""))
+                        brain_q.put_nowait((q, d.get("say", "")))
+                    elif d.get("type") == "answer" and not d.get("quiet") and not d.get("step_check"):
                         q = last_q.pop(0) if last_q else ""
                         if q:
                             remember("user", q)

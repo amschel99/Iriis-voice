@@ -1023,7 +1023,7 @@ async function send(text, opts = {}) {
   const ensureReply = () => { if (!reply) { killTyping(typing); reply = renderMessage("assistant", "", now(), { animate: true, preview: false }); setTicks(row, "read"); } return reply; };
   try {
     const r = await fetch("/v1/chat", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text, session_id: SESSION, stream: true, speak: speak && serverVoice }) });
+      body: JSON.stringify({ message: text, session_id: SESSION, stream: true, speak: speak && serverVoice, background: true }) });
     if (r.status === 401) { location.href = "/app/login"; return null; }
     if (!r.ok || !r.body) throw new Error("HTTP " + r.status);
     setTicks(row, "sent");
@@ -1058,7 +1058,11 @@ async function send(text, opts = {}) {
       }
     }
   } catch (e) {
-    killTyping(typing); setTicks(row, "fail");
+    killTyping(typing);
+    if (wentAway || document.hidden) {               // the phone paused the app: she carries on; catch up on return
+      setTicks(row, "sent"); waitingForReply = true; return null;
+    }
+    setTicks(row, "fail");
     renderMessage("assistant", navigator.onLine ? "I couldn't reach my brain just now; it may be restarting. Try again in a moment." : "You're offline. Send it again when you're back.", now(), { animate: true, ephemeral: true });
   } finally {
     killTyping(typing); busy = false; idleStatus(); syncFab();
@@ -1073,6 +1077,24 @@ async function send(text, opts = {}) {
   }
   return fullText;
 }
+// ---------------------------------------------------------------- working in the background
+// Turns are sent with background: true, so closing or leaving the app doesn't stop her: the reply is saved, a
+// notification arrives, and on return the app shows "typing…" until it lands, plus any question waiting for a yes.
+let wentAway = false, waitingForReply = false, catching = false;
+const askedIds = new Set();
+document.addEventListener("visibilitychange", () => { if (document.hidden && busy) wentAway = true; });
+async function catchUp() {
+  if (catching || busy) return; catching = true;
+  try {
+    const r = await fetch(`/v1/sessions/${SESSION}/state`); if (!r.ok) return;
+    const st = await r.json();
+    for (const q of st.pending || []) if (!askedIds.has(q.id)) { askedIds.add(q.id); confirmMsg(q); }
+    if (st.busy) { waitingForReply = true; setStatus("typing…"); setTimeout(() => { catching = false; catchUp(); }, 3000); return; }
+    if (waitingForReply) { waitingForReply = false; wentAway = false; idleStatus(); await loadHistory(); }
+  } catch (e) { /* offline: try again on the next visit */ }
+  finally { catching = false; }
+}
+
 function sendTyped() {
   let t = box.value.trim(); if (!t) return;
   if (busy) { toast("One moment, she's still replying"); return; }
@@ -1081,6 +1103,7 @@ function sendTyped() {
 }
 
 function confirmMsg(d) {
+  askedIds.add(d.id);
   const row = renderMessage("assistant", d.question, now(), { animate: true, ephemeral: true });
   const wrap = el("div", "btns");
   const opts = [["Yes", "yes", "You said yes"], ["No", "no", "You said no"], ["Yes to all (10 min)", "yes to all", "Yes to all for 10 minutes"]];
@@ -1872,9 +1895,10 @@ async function presence() {
   if (!busy) idleStatus();
 }
 window.addEventListener("online", presence); window.addEventListener("offline", () => { online = false; idleStatus(); });
-document.addEventListener("visibilitychange", () => { if (!document.hidden) { presence(); checkCalls(); } });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { presence(); checkCalls(); catchUp(); } });
 if (!pref("iriis_seen_guide3")) { pref("iriis_seen_guide3", "1"); pref("iriis_seen_guide2", "1"); setTimeout(() => openPage("guide"), 500); }
 paintInstall(); skeleton(); loadHistory(); presence(); setInterval(presence, 30000); syncFab();
+waitingForReply = true; setTimeout(catchUp, 800);      // opened while she was still working on something
 (() => {
   const q = new URLSearchParams(location.search), cid = +q.get("call");
   if (cid) { history.replaceState(null, "", "/app"); setTimeout(() => checkCalls(cid, q.get("answer") === "1"), 400); }

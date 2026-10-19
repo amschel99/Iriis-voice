@@ -18,6 +18,9 @@
     mic: '<rect x="9" y="2.5" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3.5"/>',
     micoff: '<path d="M15 9.3V5.5a3 3 0 0 0-5.7-1.3"/><path d="M9 9v2.5a3 3 0 0 0 5 2.2"/><path d="M19 11a7 7 0 0 1-1.1 3.8M5 11a7 7 0 0 0 11.3 5.5"/><path d="M12 18v3.5"/><path d="M3 3l18 18"/>',
     compass: '<circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/>',
+    keyboard: '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6 10h.01M9.5 10h.01M13 10h.01M16.5 10h.01M6.5 14h11"/>',
+    pen: '<path d="M4 20l4.2-1 10.6-10.6a2.1 2.1 0 0 0-3-3L5.2 16 4 20z"/><path d="M14 7l3 3"/>',
+    send: '<path d="M4 12l16-8-6 16-2.5-6.5L4 12z"/>',
     more: '<circle cx="5.5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.6" fill="currentColor" stroke="none"/>',
     end: '<path fill="currentColor" stroke="none" d="M12 8.6c-3.4 0-6.6 1-9 2.9-.6.5-.8 1.3-.5 2l1 2.1c.3.7 1.1 1 1.8.8l3-.9c.6-.2 1-.7 1-1.3v-1.9c1.7-.5 3.7-.5 5.4 0v1.9c0 .6.4 1.1 1 1.3l3 .9c.7.2 1.5-.1 1.8-.8l1-2.1c.3-.7.1-1.5-.5-2-2.4-1.9-5.6-2.9-9-2.9z"/>',
     torch: '<path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12z"/>',
@@ -155,6 +158,14 @@
   .sc-cf button.all{grid-column:1/-1;height:38px;background:transparent;border:1px solid var(--line);font-size:13.5px;color:#d4d4d8}
   .sc-cf.busy{opacity:.6;pointer-events:none}
 
+  .sc-type{display:none;gap:8px;align-items:center;padding:6px 6px 6px 14px;margin:0 0 8px;border-radius:26px;border:1px solid var(--line)}
+  .sc-type.show{display:flex;animation:scUp .18s ease-out}
+  .sc-type input{flex:1;min-width:0;height:40px;border:none;outline:none;background:transparent;color:#fff;font:inherit;font-size:16px}
+  .sc-type input::placeholder{color:rgba(255,255,255,.55)}
+  .sc-type button{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:var(--green);color:#04130f;flex:none}
+  .sc-type button svg{width:20px;height:20px}
+  .sc-b.typeb.on .c{background:#fff;color:#111}
+  @keyframes scUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
   .sc-bar{display:flex;justify-content:space-between;align-items:flex-start;padding:10px 8px 8px;border-radius:30px;border:1px solid var(--line)}
   .sc-b{display:flex;flex-direction:column;align-items:center;gap:5px;min-width:48px;font-size:10.5px;font-weight:500;color:rgba(255,255,255,.78);
     font-variant-numeric:tabular-nums}
@@ -317,8 +328,9 @@
         <div class="sc-caps" aria-live="polite"></div>
         <div class="sc-work sc-glass"><span class="sc-spin"></span><span class="sc-workt"></span></div>
         <div class="sc-cfs"></div>
+        <form class="sc-type sc-glass" autocomplete="off"><input class="sc-tq" placeholder="Type to Iriis…" enterkeyhint="send" aria-label="Type a question"><button type="submit" aria-label="Send">${I("send")}</button></form>
         <div class="sc-bar sc-glass">
-          <button class="sc-b" data-a="flip" aria-label="Switch camera"><span class="c">${I("flip")}</span>Flip</button>
+          <button class="sc-b typeb" data-a="type" aria-label="Type instead of talking"><span class="c">${I("keyboard")}</span>Type</button>
           <button class="sc-b mic" data-a="talk" aria-label="Mute microphone"><span class="c sc-micic">${I("mic")}</span><span class="sc-talklbl">Mute</span></button>
           <button class="sc-b recb" data-a="record" aria-label="Record a clip"><span class="c"><span class="rd"></span></span><span class="sc-reclbl">Record</span></button>
           <button class="sc-b coach" data-a="coach" aria-label="Coach mode"><span class="c">${I("compass")}</span>Coach</button>
@@ -332,6 +344,9 @@
           <button class="sc-ib sm" data-a="sheetclose" aria-label="Close">${I("x")}</button></div></div>
         <div class="sc-shb">
           <div class="sc-pane more">
+            ${row("flip", "flip", "#e2e8f0", "Switch camera", "Front or back camera")}
+            <div class="sc-item"><button class="sc-row" data-a="notice"><span class="sc-ic" style="--t:#f472b6">${I("pen")}</span>
+              <span class="sc-rt"><b>Read what I write</b><small>Answers questions written on a whiteboard, paper or screen</small></span><span class="sc-sw on sc-noticesw"></span></button></div>
             ${row("recent", "history", "#60a5fa", "What just happened?", "Review the last 90 seconds")}
             ${row("lastreport", "film", "#a78bfa", "Last report", "Open the latest review again")}
             ${row("goal", "target", "#22c55e", "Set a goal", "Tell it what you're doing, so Coach can help",
@@ -577,6 +592,13 @@
         case "answer": {
           thinking = false; renderSub();
           if (m.coach && m.quiet) { if (lastQ?.dataset.t) { lastQ.remove(); lastQ = null; } break; }
+          if (m.noticed) {                               // she read a question written in view and answered it
+            if (m.quiet) break;
+            cap("me", "✎ " + (m.question || "").slice(0, 160), "written");
+            cap("her", m.say, ["read from what you wrote", m.latency_ms ? (m.latency_ms / 1000).toFixed(1) + " s" : ""].filter(Boolean).join(" · "));
+            if (m.status === "warning" || m.status === "danger") banner(m.status, m.status === "danger" ? "Stop" : "Check this", m.say);
+            say(m.say); break;
+          }
           const meta = [m.coach ? "coach" : "", m.latency_ms ? (m.latency_ms / 1000).toFixed(1) + " s" : "", m.sources?.length ? m.sources.join(", ") : ""].filter(Boolean).join(" · ");
           if (lastQ && lastQ.dataset.t) { lastQ.innerHTML = capHTML(m.say, meta, m.model); delete lastQ.dataset.t; } else { const d = cap("her", m.say, meta); if (m.model) d.innerHTML = capHTML(m.say, meta, m.model); }
           lastQ = null;
@@ -587,6 +609,7 @@
           break; }
         case "alert": banner(m.status || "warning", m.status === "danger" ? "Stop" : "Heads up", m.say); cap("her", m.say, "alert"); say(m.say); break;
         case "state": showState(m); break;
+        case "notice": $(root, ".sc-noticesw").classList.toggle("on", !!m.on); break;
         case "coach": {
           const was = coachOn; coachOn = m.seconds > 0; $(root, '[data-a="coach"]').classList.toggle("on", coachOn); tag("coach", coachOn);
           if (coachOn && !was) toast("Coach is on — I'll speak up only if something's wrong", "coach", 4500);
@@ -742,7 +765,18 @@
       switch (a) {
         case "close": close(); break;
         case "retry": $(root, ".sc-msg").style.display = "none"; if (await startCamera()) { if (!ws || ws.readyState > 1) connect(); } break;
-        case "flip": facing = facing === "environment" ? "user" : "environment"; startCamera(); break;
+        case "type": {
+          const bar = $(root, ".sc-type"), open = !bar.classList.contains("show");
+          bar.classList.toggle("show", open); $(root, '[data-a="type"]').classList.toggle("on", open);
+          try { localStorage.setItem("sc_type", open ? "1" : "0"); } catch (e) {}
+          if (open) setTimeout(() => $(root, ".sc-tq").focus(), 50);
+          break; }
+        case "notice": {
+          const on = !$(root, ".sc-noticesw").classList.contains("on");
+          $(root, ".sc-noticesw").classList.toggle("on", on); send({ type: "notice", on });
+          toast(on ? "I'll answer questions you write in view" : "I'll ignore writing unless you ask");
+          break; }
+        case "flip": sheet(false); facing = facing === "environment" ? "user" : "environment"; startCamera(); break;
         case "torch": torchOn = !torchOn; try { await track.applyConstraints({ advanced: [{ torch: torchOn }] }); } catch (e) { torchOn = false; }
           $(root, '[data-a="torch"]').classList.toggle("on", torchOn); break;
         case "talk": listening = !listening; setTalk(); if (listening && !vad.an) startListening(); break;
@@ -805,6 +839,10 @@
       act(b.dataset.a);
     });
     const enter = (sel, a) => $(root, sel).addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); act(a); } });
+    $(root, ".sc-type").addEventListener("submit", (e) => {
+      e.preventDefault(); const q = $(root, ".sc-tq"); const t = q.value.trim(); if (!t) return; ask(t); q.value = ""; q.focus();
+    });
+    try { if (localStorage.getItem("sc_type") === "1") { $(root, ".sc-type").classList.add("show"); $(root, '[data-a="type"]').classList.add("on"); } } catch (e) {}
     enter(".sc-q", "ask"); enter(".sc-goal", "goal"); enter(".sc-url", "addurl"); enter(".sc-seryn", "import");
     $(root, ".sc-files").addEventListener("change", (e) => { const n = e.target.files.length;
       $(root, ".sc-filesl").textContent = !n ? "Choose files…" : n === 1 ? e.target.files[0].name : `${n} files`; });
