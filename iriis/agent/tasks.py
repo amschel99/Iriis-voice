@@ -1,0 +1,120 @@
+"""Runs background tasks and routines (servers/tasks.py stores them) inside the cloud core.
+
+Polls the tasks table, claims due tasks atomically, works through each one as an agent turn in its own session
+(more tool steps than a voice turn, no confirmations possible), saves the report, schedules a routine's next run,
+and tells the user through `notify` (voice announcement + Telegram when configured).
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import re
+import time
+from typing import Any, Awaitable, Callable
+
+from iriis.storage import DB, get_db
+
+log = logging.getLogger("iriis.tasks")
+
+TASK_BRIEF = (
+    "[Background task {id}: the user is NOT listening right now; you are working on this alone. Plan the steps and "
+    "work through them with your tools: search, read two or three good sources (not just snippets), cross-check "
+    "numbers, and keep going until it's done or you hit a real blocker. You cannot ask questions or get "
+    "confirmations now, so never send, post, buy, book or delete anything: prepare it (for example a draft) and say "
+    "it is ready for the user to approve. Finish with a report the user can read later: the answer first, then the "
+    "key details with where each came from (site names), then anything still needing the user. This report may be "
+    "longer than a spoken reply; plain text, short paragraphs, no tables.]\n\nTask: {goal}"
+)
+
+
+def first_sentence(text: str, limit: int = 220) -> str:
+    t = re.sub(r"\s+", " ", text).strip()
+    m = re.match(r"(.+?[.!?])(\s|$)", t)
+    s = m.group(1) if m else t
+    return s if len(s) <= limit else s[:limit].rsplit(" ", 1)[0] + "..."
+
+
+class TaskRunner:
+    def __init__(self, run: Callable[[int, str], Awaitable[str]], notify: Callable[[str, str], Awaitable[None]],
+                 db: DB | None = None, interval_s: float = 15.0, max_parallel: int = 2, timeout_s: float = 900.0):
+        """run(task_id, prompt) -> report text; notify(short spoken line, full report)."""
+        self.run_fn = run
+        self.notify = notify
+        self.db = db
+        self.interval_s = interval_s
+        self.max_parallel = max_parallel
+        self.sem = asyncio.Semaphore(max_parallel)
+        self.timeout_s = timeout_s
+        self.active: set[asyncio.Task] = set()
+
+    def _db(self) -> DB:
+        return self.db or get_db()
+
+    def recover(self) -> int:
+        """After a redeploy: tasks left 'running' never finished; run them again."""
+        rows = self._db().execute("UPDATE tasks SET status = 'scheduled', next_run = ? WHERE status = 'running' RETURNING id",
+                                  (time.time(),))
+        return len(rows)
+
+    def due(self, limit: int) -> list[tuple[Any, ...]]:
+        """Claim due tasks atomically (safe with two processes on one database)."""
+        if limit <= 0:
+            return []
+        db = self._db()
+        ids = [r[0] for r in db.execute("SELECT id FROM tasks WHERE status = 'scheduled' AND next_run <= ? "
+                                         "ORDER BY next_run LIMIT ?", (time.time(), limit))]
+        claimed = []
+        for tid in ids:
+            rows = db.execute("UPDATE tasks SET status = 'running', last_run = ? WHERE id = ? AND status = 'scheduled' "
+                              "RETURNING id, title, goal, repeat, runs", (time.time(), tid))
+            claimed += [tuple(r) for r in rows]
+        return claimed
+
+    def finish(self, tid: int, repeat: str, runs: int, report: str, ok: bool) -> None:
+        from servers.tasks import next_run
+        nxt = next_run(repeat, time.time()) if repeat else None
+        status = "scheduled" if nxt else ("done" if ok else "failed")
+        self._db().execute("UPDATE tasks SET status = ?, result = ?, next_run = ?, runs = ? WHERE id = ? AND status = 'running'",
+                           (status, report, nxt, runs + 1, tid))
+
+    async def _work(self, row: tuple[Any, ...]) -> None:
+        tid, title, goal, repeat, runs = row
+        async with self.sem:
+            t0 = time.time()
+            try:
+                report = await asyncio.wait_for(self.run_fn(tid, TASK_BRIEF.format(id=tid, goal=goal)), self.timeout_s)
+                ok = bool(report.strip())
+                report = report.strip() or "I worked on it but ended without a report."
+            except asyncio.TimeoutError:
+                ok, report = False, f"I stopped after {self.timeout_s / 60:.0f} minutes without finishing."
+            except Exception as e:  # noqa: BLE001
+                ok, report = False, f"It failed: {e.__class__.__name__}: {str(e)[:300]}"
+                log.exception("task %s failed", tid)
+            await asyncio.to_thread(self.finish, tid, repeat, runs, report, ok)
+            log.info("task %s %s in %.0fs", tid, "done" if ok else "failed", time.time() - t0)
+            spoken = (f"Your task {title} is done. {first_sentence(report)}" if ok
+                      else f"Your task {title} didn't finish. {first_sentence(report)}")
+            try:
+                await self.notify(spoken, f"Task {tid}: {title}\n\n{report}")
+            except Exception:  # noqa: BLE001
+                log.exception("task %s notify failed", tid)
+
+    async def run(self) -> None:
+        try:
+            n = await asyncio.to_thread(self.recover)
+            if n:
+                log.info("re-running %d task(s) interrupted by a restart", n)
+        except Exception as e:  # noqa: BLE001
+            log.warning("task recovery failed: %s", e)
+        while True:
+            try:
+                free = self.max_parallel - sum(1 for t in self.active if not t.done())
+                rows = await asyncio.to_thread(self.due, max(0, free))
+            except Exception as e:  # noqa: BLE001  (database briefly unreachable)
+                log.warning("task poll failed: %s", e)
+                rows = []
+            for row in rows:
+                t = asyncio.create_task(self._work(row))
+                self.active.add(t)
+                t.add_done_callback(self.active.discard)
+            await asyncio.sleep(self.interval_s)

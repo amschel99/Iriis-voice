@@ -45,11 +45,18 @@ def _shell_classifier(args: dict[str, Any]) -> Decision | None:
     return Decision(verdict, reason)
 
 
+def _overwrite_classifier(args: dict[str, Any]) -> Decision | None:
+    """Creating a new document runs directly; replacing an existing one asks first."""
+    return Decision("confirm", "replaces an existing file") if args.get("overwrite") else None
+
+
 class PermissionManager:
     def __init__(self, config: Config, servers: list[MCPServerConfig]):
         self.config = config
         self.servers = {s.name: s for s in servers}
         self.classifiers: dict[str, ArgClassifier] = {"shell__run_command": _shell_classifier}
+        for t in ("create_document", "create_spreadsheet", "create_pdf", "create_presentation"):
+            self.classifiers[f"documents__{t}"] = _overwrite_classifier
 
     def add_servers(self, servers: list[MCPServerConfig]) -> None:
         """Register servers that live elsewhere (the desktop agent advertises its own tiers)."""

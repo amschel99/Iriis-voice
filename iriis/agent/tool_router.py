@@ -4,9 +4,10 @@ from __future__ import annotations
 import re
 from typing import Any, Awaitable, Callable
 
-# Always available regardless of routing: cheap and broadly useful.
-# Always offered: cheap (few tools) and broadly useful. Web search is here so she never thinks she's offline.
-CORE_SERVERS = ("time_and_calc", "memory", "web", "seryn")
+# Always offered: small (few tools) and broadly useful. Web search is here so she never thinks she's offline;
+# tasks so any bigger job can go to the background. Big servers (seryn has ~50 tools) are offered only when the
+# request is about them, otherwise they'd crowd everything else out of the per-turn tool budget.
+CORE_SERVERS = ("time_and_calc", "memory", "web", "tasks")
 
 _STOP = set("a an the to of in on for and or is are be me my i you it this that what how can please could would with do does at".split())
 
@@ -61,9 +62,19 @@ class ToolRouter:
             scores = self._server_scores(query, servers)
             chosen = [n for n, sc in sorted(scores.items(), key=lambda kv: -kv[1]) if sc > 0]
 
+        q = {_stem(w) for w in _words(query)}
+
+        def relevance(t: dict[str, Any]) -> int:
+            fn = t["function"]
+            return len(q & {_stem(w) for w in _words(fn["name"].replace("_", " ") + " " + fn.get("description", ""))})
+
         selected: list[dict[str, Any]] = []
         for name in [*[c for c in CORE_SERVERS if c in servers], *chosen]:
-            for t in servers[name]["tools"]:
+            tools = servers[name]["tools"]
+            # a server bigger than the space left: its most relevant tools first
+            if len(tools) > self.max_tools - len(selected):
+                tools = sorted(tools, key=lambda t: -relevance(t))
+            for t in tools:
                 if t not in selected and len(selected) < self.max_tools:
                     selected.append(t)
         return selected

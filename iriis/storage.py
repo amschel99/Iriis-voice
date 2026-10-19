@@ -27,10 +27,30 @@ _TABLES = {
     "messages": "id {pk}, session_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, created {real} NOT NULL",
     # Rolling summary of the parts of a conversation that no longer fit in the model's context.
     "conversation_summaries": "session_id TEXT PRIMARY KEY, summary TEXT NOT NULL, updated {real} NOT NULL",
+    # Money tracker (servers.money). amount is always positive; kind says which way it went.
+    # Background tasks and routines (servers/tasks.py stores them, iriis/agent/tasks.py runs them).
+    "tasks": "id {pk}, title TEXT NOT NULL, goal TEXT NOT NULL, repeat TEXT NOT NULL DEFAULT '', "
+             "status TEXT NOT NULL DEFAULT 'scheduled', next_run {real}, last_run {real}, runs INTEGER NOT NULL DEFAULT 0, "
+             "result TEXT, created {real} NOT NULL",
+    # Small settings that must survive redeploys and new computers (e.g. the Google OAuth token).
+    "kv": "key TEXT PRIMARY KEY, value TEXT NOT NULL, updated {real} NOT NULL",
+    "transactions": "id {pk}, ts {real} NOT NULL, amount {real} NOT NULL, currency TEXT NOT NULL DEFAULT 'KES', "
+                    "kind TEXT NOT NULL DEFAULT 'expense', category TEXT NOT NULL DEFAULT 'other', "
+                    "party TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', "
+                    "account TEXT NOT NULL DEFAULT 'mpesa', ref TEXT NOT NULL DEFAULT '', "
+                    "business TEXT NOT NULL DEFAULT 'personal', created {real} NOT NULL",
+    "budgets": "category TEXT NOT NULL, business TEXT NOT NULL DEFAULT 'personal', monthly_limit {real} NOT NULL, "
+               "PRIMARY KEY (category, business)",
 }
 _INDEXES = [
+    "CREATE INDEX IF NOT EXISTS tasks_due ON tasks (status, next_run)",
     "CREATE INDEX IF NOT EXISTS reminders_due ON reminders (fired, due)",
     "CREATE INDEX IF NOT EXISTS messages_session ON messages (session_id, id)",
+    "CREATE INDEX IF NOT EXISTS transactions_ts ON transactions (ts)",
+    "CREATE INDEX IF NOT EXISTS transactions_business_ts ON transactions (business, ts)",
+    "CREATE INDEX IF NOT EXISTS transactions_category ON transactions (category)",
+    # M-Pesa codes are unique; blank refs (manual entries) are not constrained.
+    "CREATE UNIQUE INDEX IF NOT EXISTS transactions_ref ON transactions (ref) WHERE ref <> ''",
 ]
 _TYPES = {
     "sqlite": {"pk": "INTEGER PRIMARY KEY AUTOINCREMENT", "real": "REAL"},

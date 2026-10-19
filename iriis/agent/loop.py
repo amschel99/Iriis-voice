@@ -151,12 +151,16 @@ class Agent:
             self.tools_note = ""
             return []
         catalog = self.tools.servers_catalog()
-        missing = [s for s in ("web", "browser", "files", "shell") if s not in catalog]
+        missing = [s for s in ("browser", "files", "shell") if s not in catalog]
         # Tell her honestly when the PC link is down, instead of letting her claim she has no internet.
-        self.tools_note = ("Right now your link to the user's computer is down, so web search, the browser, files "
-                           "and the terminal are temporarily unavailable. If asked for them, say the computer link is "
-                           "down and should be back shortly; never say you have no internet access."
+        self.tools_note = ("Right now your link to the user's computer is down, so the browser, files and the terminal "
+                           "are temporarily unavailable (web search, email, calendar, tasks and Seryn still work). If "
+                           "asked for them, say the computer link is down; never say you have no internet access."
                            if missing else "")
+        # Route on the previous user message too, so a follow-up ("and the other one?") keeps its tools.
+        prev = next((m["content"] for m in reversed(self.history.messages)
+                     if m.get("role") == "user" and isinstance(m.get("content"), str)), "")
+        query = f"{query} {prev[:300]}"
         return await self.router.select(query, catalog, self._llm_pick_servers)
 
     # ------------------------------------------------------------------ tool execution

@@ -142,6 +142,46 @@ mcpServers:
     description: Seryn Labs expert tools - PCM cold packs, Glauber's salt blends, paraffins, HDPE casings, crate liners, insulation, produce storage, lab protocols, hazards, Nairobi weather, whole designs. Every value cited.
     keywords: [seryn, pack, packs, pcm, phase, melt, melting, freeze, freezing, glauber, sulfate, sulphate, salt, borax, cmc, paraffin, wax, alkane, tetradecane, pentadecane, hexadecane, hdpe, casing, liner, crate, cooler, lid, insulation, eps, vip, foam, tomato, tomatoes, avocado, mango, banana, produce, chilling, recipe, latent, supercooling, nucleator, cold, chill, cool, lab, protocol, test, hazard, headspace]
 
+  tasks:                 # background jobs and routines (run by the cloud core; see iriis/agent/tasks.py)
+    command: python
+    args: ["-m", "servers.tasks"]
+    tier: auto
+    tools: {cancel_task: auto}
+    description: Hand Iriis bigger jobs to do in the background (research, comparisons, drafting, monitoring) and routines that repeat (morning briefing, daily email check); list them and read their reports.
+    keywords: [task, tasks, background, routine, routines, every, daily, morning, briefing, research, compare, comparison, find out, look into, investigate, report, later, monitor, schedule, weekly]
+
+  google:                # Gmail + Google Calendar (cloud; connect once with: iriis google-login client.json)
+    command: python
+    args: ["-m", "servers.google"]
+    needs_internet: true
+    tier: auto             # reading, searching, drafting
+    tools:
+      gmail_send_draft: confirm
+      gmail_mark: confirm
+      calendar_create: confirm
+      calendar_update: confirm
+      calendar_delete: confirm
+    description: The user's Gmail (search, read, draft replies, send with confirmation) and Google Calendar (agenda, free time, add/change/delete events).
+    keywords: [email, emails, mail, gmail, inbox, unread, reply, draft, send, message, wrote, calendar, meeting, meetings, event, events, schedule, appointment, agenda, free, busy, invite, tomorrow, today, week]
+
+  documents:             # Word / Excel / PDF / PowerPoint on the user's PC (allowed folders only)
+    command: python
+    args: ["-m", "servers.documents"]
+    tier: auto             # new files; replacing an existing file (overwrite=true) asks first
+    tools: {append_to_spreadsheet: confirm}
+    description: Create Word documents, Excel spreadsheets, PDFs and PowerPoint presentations, append rows to spreadsheets, and read docx, xlsx, csv, pptx, pdf, txt and md files in the allowed folders.
+    keywords: [document, documents, word, docx, excel, spreadsheet, xlsx, sheet, csv, pdf, powerpoint, pptx, presentation, slides, deck, report, letter, memo, table, invoice, write up, proposal, cv]
+
+  money:                 # personal + business money tracker in KES, M-Pesa SMS import (cloud database)
+    command: python
+    args: ["-m", "servers.money"]
+    tier: auto
+    tools:
+      delete_transaction: confirm
+      update_transaction: confirm
+    description: Personal and business money tracker in KES (expenses, income, M-Pesa SMS import, budgets, summaries, CSV export), stored in the cloud database.
+    keywords: [money, spend, spent, spending, expense, expenses, budget, budgets, mpesa, m-pesa, income, sales, sold, paid, pay, payment, ksh, kes, shillings, bob, cost, costs, bought, received, transaction, transactions, till, paybill, withdraw, airtime, rent, salary, profit, balance, finances, export]
+
   # Unofficial messaging/social bridges: NEED INTERNET, may break, and risk account bans.
   # Read-mostly; every send/post tool stays at confirm. Their credentials live in their own env.
   whatsapp:              # e.g. a WAHA (whatsapp-web.js / Baileys) MCP bridge on localhost

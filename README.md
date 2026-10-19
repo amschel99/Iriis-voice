@@ -28,6 +28,8 @@ hands on your own computer (MCP tools). Other apps can talk to it over REST/SSE,
 - [Deploy to Railway](#2-deploy-to-railway)
 - [Run the desktop agent](#3-desktop-agent)
 - [Use Iriis from other tools (API, MCP, llms.txt)](#4-use-iriis-from-other-tools)
+- [Her assistant skills: tasks, phone, email, calendar, documents, money](#4b-assistant-skills)
+- [A new or replacement computer](#4c-a-new-or-replacement-computer)
 - [Permissions and safety](#5-permissions-and-safety)
 - [Speech recognition and your accent](#6-speech-recognition-and-your-accent)
 - [Fully local / offline mode](#7-fully-local--offline-mode)
@@ -261,6 +263,49 @@ Example client config:
   "headers": {"Authorization": "Bearer <IRIIS_API_KEY>"}}}}
 ```
 Over MCP, confirm-tier actions are declined, because MCP has no way for you to say yes. Do those by voice or in chat.
+
+## 4b. Assistant skills
+
+Everything below is free. Except the documents tools and the browser, it runs in the cloud, so it works with
+your computer off.
+
+| Skill | Where | How to turn it on |
+|---|---|---|
+| **Web search and reading** (`web`) | PC, and cloud when the PC is off | Nothing to set up. Free engines are queried in parallel: DuckDuckGo, Yahoo, Brave, Startpage, Mojeek and Google via `ddgs`, falling back to Wikipedia. Pages needing JavaScript are rendered in headless Chrome, and PDFs are read. Optional free keys: `TAVILY_API_KEY` (1,000 searches/month, no card) or `BRAVE_API_KEY`. |
+| **Browser** (web apps, logins, forms, WhatsApp Web) | PC | Her Chrome window keeps its logins, so sign in once inside it. |
+| **Background tasks and routines** (`tasks`) | cloud | Nothing to set up. Say "look into X and report back", or "every weekday at 7, brief me on my calendar, unread email and the weather". Reports arrive by voice and on Telegram. Background tasks can't confirm anything, so they prepare drafts and never send. |
+| **Telegram** (text or voice notes from anywhere) | cloud | Create a bot with @BotFather and set `TELEGRAM_BOT_TOKEN` on Railway. Message the bot once; it replies with your chat id. Set `TELEGRAM_CHAT_ID` to it. Only that chat is served. |
+| **Gmail and Google Calendar** (`google`) | cloud | See below. |
+| **Documents** (Word, Excel, PDF, PowerPoint) | PC | Nothing to set up. Files go in Documents. Replacing an existing file asks first. |
+| **Money** (KES, M-Pesa SMS import, budgets, per business) | cloud | Nothing to set up. Paste M-Pesa messages and she logs them. |
+| **Seryn Twin** (`seryn`) | cloud, over remote MCP | Set `SERYN_API_KEY` on Railway to one of the twin's `SERYN_API_KEYS`, or to its app password. |
+
+**Connecting Google (once, about 5 minutes, free):**
+1. At https://console.cloud.google.com, create a project. Enable the **Gmail API** and the **Google Calendar API**.
+2. Under *Google Auth Platform*:
+   - **Branding:** add your app name and email.
+   - **Audience:** add yourself as a test user, then click **Publish app** so it shows *In production*. Otherwise Google expires the sign-in every 7 days. Google will show an "unverified app" warning; that's expected for your own app.
+   - **Clients:** create a client of type **Desktop app** and download its JSON.
+3. Run `iriis google-login path	o\client_secret_XXXX.json`. Your browser opens; sign in and allow access. The token is stored in the cloud database, not on the PC. Ask her "am I connected to Google?" to check.
+
+## 4c. A new or replacement computer
+
+Memories, notes, reminders, tasks, money records, conversations and the Google sign-in all live in Railway
+Postgres. Seryn is on Railway too. Nothing personal is kept on the PC. On a new Windows computer:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts
+ew_computer.ps1
+```
+
+The script:
+- installs Git, Python 3.12, Node.js and Chrome if they're missing;
+- clones the repo and installs everything;
+- asks for `IRIIS_SERVER_URL`, `IRIIS_API_KEY` and `IRIIS_DESKTOP_TOKEN` (copy them from the iriis-voice service's Variables on Railway);
+- starts Iriis at login.
+
+The new computer's link replaces the old one's automatically. Only website logins inside her browser are
+per-computer, so sign in again there and scan WhatsApp Web's QR code once.
 
 ## 5. Permissions and safety
 

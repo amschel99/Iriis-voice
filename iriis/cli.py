@@ -7,6 +7,7 @@
     iriis ask "question"        talk to her from the terminal (streams the reply; --speak to hear it)
     iriis say "text"            have her say something
     iriis logs [-f]             show the background agent's log
+    iriis google-login FILE     connect Gmail + Calendar (FILE = your OAuth client JSON); the token goes to the cloud
     iriis server                run the cloud core locally (development)
 """
 from __future__ import annotations
@@ -520,6 +521,69 @@ def cmd_mic(args) -> None:
         print(f"To make this mic permanent, set  audio.input_device: {args.device}  in config/config.yaml, then `iriis restart`.")
 
 
+def cmd_google_login(args) -> None:
+    """OAuth loopback flow on this PC; the refresh token is stored in the cloud database, not here."""
+    import hashlib
+    import http.server
+    import threading
+    import urllib.parse
+    import webbrowser
+
+    import httpx
+    from servers.google import SCOPES
+
+    raw = json.loads(Path(args.client_json).read_text(encoding="utf-8"))
+    c = raw.get("installed") or raw.get("web") or raw
+    client_id, client_secret = c["client_id"], c["client_secret"]
+    verifier = secrets.token_urlsafe(64)
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+    state = secrets.token_urlsafe(16)
+    got: dict[str, str] = {}
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            q = dict(urllib.parse.parse_qsl(urllib.parse.urlparse(self.path).query))
+            if q.get("state") == state:
+                got.update(q)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            msg = "Iriis is connected to Google. You can close this tab." if "code" in q else f"Failed: {q.get('error', '?')}"
+            self.wfile.write(f"<h2 style='font-family:sans-serif'>{msg}</h2>".encode())
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    redirect = f"http://127.0.0.1:{srv.server_port}/"
+    url = "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode({
+        "client_id": client_id, "redirect_uri": redirect, "response_type": "code", "scope": " ".join(SCOPES),
+        "access_type": "offline", "prompt": "consent", "state": state, "code_challenge": challenge,
+        "code_challenge_method": "S256"})
+    threading.Thread(target=srv.handle_request, daemon=True).start()
+    iriis_says("Opening Google in your browser: sign in and allow Gmail and Calendar.")
+    print(f"{DIM}If it doesn't open: {url}{RESET}")
+    webbrowser.open(url)
+    for _ in range(600):
+        if got:
+            break
+        time.sleep(0.5)
+    srv.server_close()
+    if "code" not in got:
+        sys.exit(f"{RED}Google sign-in didn't finish{RESET} ({got.get('error', 'timed out')}).")
+    tok = httpx.post("https://oauth2.googleapis.com/token", timeout=30, data={
+        "code": got["code"], "client_id": client_id, "client_secret": client_secret, "redirect_uri": redirect,
+        "grant_type": "authorization_code", "code_verifier": verifier}).json()
+    if "refresh_token" not in tok:
+        sys.exit(f"{RED}Google gave no refresh token{RESET}: {tok.get('error_description', tok.get('error', tok))}")
+    r = httpx.post(_server_url() + "/v1/settings/google", headers=_auth(), timeout=30,
+                   json={"client_id": client_id, "client_secret": client_secret, "refresh_token": tok["refresh_token"]})
+    if r.status_code != 200:
+        sys.exit(f"{RED}Couldn't save it in the cloud{RESET} (HTTP {r.status_code}): {r.text[:200]}")
+    iriis_says(f"Done. Gmail and Calendar are connected ({r.json().get('account', 'your account')}). "
+               "Nothing was saved on this computer.")
+
+
 def cmd_server(args) -> None:
     sys.exit(subprocess.call([sys.executable, "-m", "iriis.server"], cwd=str(ROOT)))
 
@@ -563,6 +627,9 @@ def main() -> None:
     sp.add_argument("--list", action="store_true", help="list audio devices")
     sp.add_argument("--seconds", type=float, default=30)
     sp.set_defaults(fn=cmd_mic)
+    sp = sub.add_parser("google-login", help="connect Gmail + Google Calendar (token stored in the cloud)")
+    sp.add_argument("client_json", help="the OAuth client JSON downloaded from console.cloud.google.com")
+    sp.set_defaults(fn=cmd_google_login)
     sub.add_parser("server", help="run the cloud core locally (development)").set_defaults(fn=cmd_server)
     args = p.parse_args()
     try:

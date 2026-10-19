@@ -56,15 +56,37 @@ class Core:
         self.audit = AuditLog(cfg.permissions.audit_log, db=self.db, source="cloud")
         self.sessions = SessionStore(self._make_agent, cfg.server.max_sessions)
         self.voice_sockets: set[WebSocket] = set()
+        from iriis.server.telegram import TelegramBridge
+        self.telegram = TelegramBridge(self)
         self.problems: list[str] = []
         self.started = time.time()
 
-    def _make_agent(self, session_id: str) -> Agent:
+    def _make_agent(self, session_id: str, cfg: Config | None = None) -> Agent:
         facts = (lambda: [t for _, t in self.memory.all()]) if self.memory else None
-        agent = Agent(self.cfg, self.llm, self.tools, self.permissions, facts,
+        agent = Agent(cfg or self.cfg, self.llm, self.tools, self.permissions, facts,
                       store=self.conversations, session_id=session_id)
         agent.audit = self.audit
         return agent
+
+    async def run_task(self, task_id: int, prompt: str) -> str:
+        """One background task as an agent turn: its own session, more tool steps, no confirmations."""
+        from iriis.server.sessions import Session, run_turn
+        cfg = self.cfg.model_copy(deep=True)
+        cfg.llm.max_tool_iterations = max(cfg.llm.max_tool_iterations, 20)
+        cfg.llm.max_tokens = max(cfg.llm.max_tokens, 4096)
+        sid = f"task-{task_id}"
+        session = Session(sid, self._make_agent(sid, cfg))
+
+        async def ignore(ev, _audio):
+            return None
+
+        done = await run_turn(session, prompt, ignore, allow_confirm=False)
+        return done["text"]
+
+    async def notify(self, spoken: str, full: str = "") -> None:
+        """Task reports: a short line out loud, the whole report in Telegram."""
+        await self.announce(spoken, telegram=False)
+        await self.telegram.broadcast(full or spoken)
 
     async def start(self) -> None:
         ok, msg = await self.llm.health()
@@ -81,8 +103,10 @@ class Core:
         for p in self.problems:
             log.warning(p)
 
-    async def announce(self, text: str) -> None:
-        """Reminders and timers go to the desktop and every open voice socket."""
+    async def announce(self, text: str, telegram: bool = True) -> None:
+        """Reminders and timers go to the desktop, every open voice socket and Telegram."""
+        if telegram:
+            await self.telegram.broadcast(text)
         await self.desktop.send({"type": "announce", "text": text})
         for ws in list(self.voice_sockets):
             try:
@@ -94,6 +118,7 @@ class Core:
         n = await asyncio.to_thread(self.conversations.flush)   # redeploy/shutdown: nothing is lost
         log.info("flushed %d conversation messages on shutdown", n)
         await self.mcp.stop()
+        await self.telegram.aclose()
         await self.llm.aclose()
 
 
@@ -180,6 +205,7 @@ def status_dict(core: Core) -> dict[str, Any]:
         "storage": core.db.description,
         "unsaved_messages": core.conversations.pending,
         "desktop_connected": core.desktop.online,
+        "telegram": {"enabled": core.telegram.enabled, "allowed_chats": len(core.telegram.allowed)},
         "cloud_servers": core.mcp.status(),
         "tools": sum(len(s["tools"]) for s in core.tools.servers_catalog().values()),
         "problems": core.problems,
@@ -249,10 +275,15 @@ def create_app(cfg: Config | None = None) -> FastAPI:
         await core.start()
         reminders = asyncio.create_task(ReminderWatcher(core.announce, core.db).run())
         flusher = asyncio.create_task(core.conversations.run_flusher(cfg.memory.flush_interval_s))
+        from iriis.agent.tasks import TaskRunner
+        background = [asyncio.create_task(TaskRunner(core.run_task, core.notify, core.db).run()),
+                      asyncio.create_task(core.telegram.run())]
         async with mcp.session_manager.run():
             yield
         reminders.cancel()
         flusher.cancel()
+        for t in background:
+            t.cancel()
         await core.stop()
 
     app = FastAPI(title="Iriis", version="0.2.0", lifespan=lifespan,
@@ -345,6 +376,26 @@ def create_app(cfg: Config | None = None) -> FastAPI:
     async def tts(req: TTSRequest, request: Request):
         audio, sr = await request.app.state.core.speech.synthesize(req.text, req.voice)
         return Response(wav_bytes(audio, sr), media_type="audio/wav")
+
+    @app.post("/v1/settings/google", dependencies=[Depends(require_key)])
+    async def google_settings(request: Request):
+        """Store the Google OAuth client + refresh token (from `iriis google-login`) in the database."""
+        body = await request.json()
+        if not all(isinstance(body.get(k), str) and body[k] for k in ("client_id", "client_secret", "refresh_token")):
+            raise HTTPException(400, "client_id, client_secret and refresh_token are required")
+        core: Core = request.app.state.core
+        val = json.dumps({k: body[k] for k in ("client_id", "client_secret", "refresh_token")})
+        await asyncio.to_thread(core.db.execute,
+                                "INSERT INTO kv (key, value, updated) VALUES ('google_oauth', ?, ?) "
+                                "ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated = excluded.updated",
+                                (val, time.time()))
+        try:
+            import servers.google as g
+            g._token.clear()
+            account = (await asyncio.to_thread(g.google_status)).removeprefix("Connected as ").split(" (")[0]
+        except Exception:  # noqa: BLE001
+            account = ""
+        return {"ok": True, "account": account}
 
     @app.post("/v1/stt", dependencies=[Depends(require_key)])
     async def stt(request: Request, file: UploadFile = File(...)):
