@@ -391,7 +391,11 @@ def cmd_ask(args) -> None:
                         clips.append(base64.b64decode(ev["data"]))
                     elif event == "confirm":
                         print(f"\n{YELLOW}{ev['question']}{RESET}")
-                        reply = input("yes/no> ")
+                        try:
+                            reply = input("yes/no> ")
+                        except EOFError:         # no keyboard (piped / scripted): the safe answer is no
+                            reply = "no"
+                            print("no (no keyboard to answer)")
                         client.post(url + "/v1/confirm", headers=_auth(),
                                     json={"session_id": ev["session_id"], "id": ev["id"], "text": reply})
                     elif event == "error":
