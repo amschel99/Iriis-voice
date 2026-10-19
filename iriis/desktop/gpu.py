@@ -11,10 +11,14 @@ drops); the only cross-thread state is two floats and an Event, and failures are
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import threading
 import time
+import urllib.request
+
+API = "https://api.endpoints.huggingface.cloud/v2/endpoint"
 
 log = logging.getLogger("iriis.gpu")
 
@@ -58,20 +62,31 @@ class GpuManager:
     def stop(self) -> None:
         self._stop.set()
 
-    def _api(self):
-        from huggingface_hub import HfApi
-        return HfApi(token=self.token)
+    # Plain HTTPS to the Inference Endpoints API, NOT huggingface_hub: the desktop sets HF_HUB_OFFLINE=1 so
+    # local models never touch the network, and the hub client honours that flag for these calls too.
+    def _http(self, method: str, url: str) -> dict:
+        req = urllib.request.Request(url, method=method, headers={"Authorization": f"Bearer {self.token}"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            body = r.read()
+        return json.loads(body) if body else {}
+
+    def _path(self) -> str:
+        if "/" not in self.endpoint:      # "name" -> "namespace/name" via whoami (once)
+            me = self._http("GET", "https://huggingface.co/api/whoami-v2")
+            self.endpoint = f"{me['name']}/{self.endpoint}"
+        return f"{API}/{self.endpoint}"
 
     def status(self) -> str:
         try:
-            self.state = self._api().get_inference_endpoint(self.endpoint).status
+            self.state = self._http("GET", self._path()).get("status", {}).get("state", "unknown")
         except Exception as e:  # noqa: BLE001
+            self.state = "unknown"
             log.warning("GPU status check failed: %s", e)
         return self.state
 
     def sleep_now(self) -> bool:
         try:
-            self._api().scale_to_zero_inference_endpoint(self.endpoint)
+            self._http("POST", self._path() + "/scale-to-zero")
             self.slept_at = time.monotonic()
             self.state = "scaledToZero"
             log.info("GPU idle for %.0f s: scaled %s to zero", time.monotonic() - self.last_activity, self.endpoint)
@@ -88,8 +103,11 @@ class GpuManager:
                     continue
                 if self.slept_at is not None and self.slept_at > self.last_activity:
                     continue                          # already asleep since the last activity
-                if self.status() in ("running", "initializing", "updating"):
+                state = self.status()
+                if state in ("running", "initializing", "updating", "pending"):
                     self.sleep_now()
+                elif state == "unknown":
+                    continue                          # couldn't ask: try again next check, never assume it's off
                 else:
                     self.slept_at = time.monotonic()  # already off: remember, don't ask again until activity
             except Exception as e:  # noqa: BLE001  (the manager must never die)
