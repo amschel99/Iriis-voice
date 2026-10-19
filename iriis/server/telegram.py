@@ -91,7 +91,8 @@ class TelegramBridge:
 
         try:
             await self._api("sendChatAction", chat_id=chat_id, action="typing")
-            done = await (self._run_turn or run_turn)(session, text, emit, allow_confirm=True,
+            # She knows it's Telegram: files go back here, and the reply is read rather than heard.
+            done = await (self._run_turn or run_turn)(session, f"[via Telegram] {text}", emit, allow_confirm=True,
                                                       confirm_timeout=self.core.cfg.server.confirm_timeout_s * 3)
             reply = done["text"] + ("\n\n" + "\n".join(screens) if screens else "")
             if reply.strip() and reply.strip() != "(silent)":

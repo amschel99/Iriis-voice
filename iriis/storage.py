@@ -34,6 +34,9 @@ _TABLES = {
              "result TEXT, created {real} NOT NULL",
     # Small settings that must survive redeploys and new computers (e.g. the Google OAuth token).
     "kv": "key TEXT PRIMARY KEY, value TEXT NOT NULL, updated {real} NOT NULL",
+    # Charts, diagrams and documents the cloud studio made (base64), so they can go to Telegram or any computer.
+    "files": "id {pk}, name TEXT NOT NULL, mime TEXT NOT NULL, size INTEGER NOT NULL, data TEXT NOT NULL, "
+             "created {real} NOT NULL",
     "transactions": "id {pk}, ts {real} NOT NULL, amount {real} NOT NULL, currency TEXT NOT NULL DEFAULT 'KES', "
                     "kind TEXT NOT NULL DEFAULT 'expense', category TEXT NOT NULL DEFAULT 'other', "
                     "party TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', "

@@ -378,6 +378,18 @@ def create_app(cfg: Config | None = None) -> FastAPI:
         audio, sr = await request.app.state.core.speech.synthesize(req.text, req.voice)
         return Response(wav_bytes(audio, sr), media_type="audio/wav")
 
+    @app.get("/v1/files/{file_id}", dependencies=[Depends(require_key)])
+    async def get_file(file_id: int, request: Request):
+        """A chart, diagram or document the studio made (for save_from_cloud, apps and other agents)."""
+        import base64
+        core: Core = request.app.state.core
+        rows = await asyncio.to_thread(core.db.execute, "SELECT name, mime, data FROM files WHERE id = ?", (file_id,))
+        if not rows:
+            raise HTTPException(404, "no such file")
+        name, mime, data = rows[0]
+        return Response(base64.b64decode(data), media_type=mime,
+                        headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
     @app.post("/v1/settings/google", dependencies=[Depends(require_key)])
     async def google_settings(request: Request):
         """Store the Google OAuth client + refresh token (from `iriis google-login`) in the database."""

@@ -3,7 +3,7 @@
 Create tools: create_document (.docx), create_spreadsheet (.xlsx), create_pdf, create_presentation (.pptx).
 Edit tool: append_to_spreadsheet. Read tool: read_document (.docx, .xlsx, .csv, .pptx, .pdf, .txt, .md).
 Documents are written from simple Markdown: # headings, paragraphs, - bullets, 1. numbered lists, **bold**,
-*italic* and | pipe | tables |. Existing files are never replaced unless overwrite=true.
+*italic*, | pipe | tables | and images on their own line: ![caption](picture.png). Existing files are never replaced unless overwrite=true.
 Libraries: python-docx, openpyxl, python-pptx (MIT), reportlab, pypdf (BSD).
 """
 from __future__ import annotations
@@ -28,6 +28,20 @@ INLINE = re.compile(r"\*\*(.+?)\*\*|__(.+?)__|\*(.+?)\*|(?<!\w)_(.+?)_(?!\w)")
 
 
 # ---------------------------------------------------------------- helpers
+
+def resolve_image(ref: str) -> Path:
+    """Where an ![caption](ref) image lives. Here: a file in the allowed folders. The cloud studio server swaps
+    this for one that fetches its own stored charts and diagrams ("file:12")."""
+    p = _resolve(ref)
+    if not p.is_file():
+        raise ToolError(f"Image not found: {ref}")
+    return p
+
+
+def _image(ref: str) -> Path:
+    import servers.documents as me     # late lookup so a server that imports this module can replace it
+    return me.resolve_image(ref)
+
 
 def _target(filename: str, ext: str, overwrite: bool) -> Path:
     """Resolve a new file's path inside the allowed folders, with the right extension."""
@@ -75,7 +89,8 @@ def _table_row(line: str) -> list[str]:
 
 
 def parse_markdown(md: str) -> list[tuple]:
-    """Blocks: ("h", level, text), ("p", text), ("ul", [items]), ("ol", [items]), ("table", [rows])."""
+    """Blocks: ("h", level, text), ("p", text), ("ul", [items]), ("ol", [items]), ("table", [rows]),
+    ("img", ref, caption)."""
     blocks: list[tuple] = []
     para: list[str] = []
 
@@ -89,7 +104,10 @@ def parse_markdown(md: str) -> list[tuple]:
         if not line:
             flush()
             continue
-        if m := re.match(r"^(#{1,6})\s+(.*)$", line):
+        if m := re.match(r"^!\[(.*?)\]\((.+?)\)$", line):
+            flush()
+            blocks.append(("img", m.group(2).strip(), m.group(1).strip()))
+        elif m := re.match(r"^(#{1,6})\s+(.*)$", line):
             flush()
             blocks.append(("h", min(len(m.group(1)), 3), m.group(2).strip().rstrip("#").strip()))
         elif m := re.match(r"^[-*+]\s+(.*)$", line):
@@ -164,6 +182,12 @@ def create_document(filename: str, content: str, title: str = "", overwrite: boo
         elif b[0] in ("ul", "ol"):
             for item in b[1]:
                 fill(doc.add_paragraph(style="List Bullet" if b[0] == "ul" else "List Number"), item)
+        elif b[0] == "img":
+            from docx.shared import Inches
+            doc.add_picture(str(_image(b[1])), width=Inches(6.0))
+            if b[2]:
+                cap = doc.add_paragraph()
+                cap.add_run(_plain(b[2])).italic = True
         elif b[0] == "table":
             rows = b[1]
             cols = max(len(r) for r in rows)
@@ -174,7 +198,7 @@ def create_document(filename: str, content: str, title: str = "", overwrite: boo
                     par = t.cell(ri, ci).paragraphs[0]
                     fill(par, f"**{row[ci]}**" if ri == 0 and ci < len(row) and row[ci] else (row[ci] if ci < len(row) else ""))
     doc.save(p)
-    paras = sum(1 for b in blocks if b[0] != "table")
+    paras = sum(1 for b in blocks if b[0] not in ("table", "img"))
     tables = sum(1 for b in blocks if b[0] == "table")
     return _saved(p, _plural(paras, "section") + (f", {_plural(tables, 'table')}" if tables else ""))
 
@@ -253,6 +277,18 @@ def create_pdf(filename: str, content: str, title: str = "", overwrite: bool = F
             items = [ListItem(Paragraph(markup(x), st["BodyText"])) for x in b[1]]
             kind = {"bulletType": "bullet", "start": "•"} if b[0] == "ul" else {"bulletType": "1"}
             story.append(ListFlowable(items, leftIndent=14, **kind))
+        elif b[0] == "img":
+            from reportlab.platypus import Image
+            img = Image(str(_image(b[1])))
+            w = A4[0] - 4 * cm
+            img.drawHeight, img.drawWidth = img.drawHeight * w / img.drawWidth, w
+            if img.drawHeight > A4[1] - 6 * cm:
+                h = A4[1] - 6 * cm
+                img.drawWidth, img.drawHeight = img.drawWidth * h / img.drawHeight, h
+            story.append(img)
+            if b[2]:
+                story.append(Paragraph(f"<i>{markup(b[2])}</i>", st["BodyText"]))
+            story.append(Spacer(1, 8))
         elif b[0] == "table":
             rows = b[1]
             cols = max(len(r) for r in rows)
@@ -275,7 +311,7 @@ def create_pdf(filename: str, content: str, title: str = "", overwrite: bool = F
 @mcp.tool()
 def create_presentation(filename: str, slides: list[dict], overwrite: bool = False) -> str:
     """Create a PowerPoint presentation (.pptx). slides: list of {"title": "...", "bullets": ["...", ...],
-    "notes": "speaker notes (optional)"}."""
+    "image": "picture.png (optional)", "notes": "speaker notes (optional)"}."""
     from pptx import Presentation
 
     if not slides:
@@ -299,6 +335,13 @@ def create_presentation(filename: str, slides: list[dict], overwrite: bool = Fal
             body.text = str(s["subtitle"])
         else:
             body._element.getparent().remove(body._element)
+        if s.get("image"):
+            from pptx.util import Inches
+            left = Inches(5.2) if bullets else Inches(1.0)
+            slide.shapes.add_picture(str(_image(str(s["image"]))), left, Inches(1.6),
+                                     width=Inches(4.5) if bullets else Inches(8.0))
+            if bullets:
+                body.width = Inches(4.6)
         if s.get("notes"):
             slide.notes_slide.notes_text_frame.text = str(s["notes"])
     prs.save(p)
@@ -430,6 +473,34 @@ def read_document(path: str, max_chars: int = MAX_READ_CHARS, start: int = 0) ->
     if not text.strip():
         return f"{p.name} has no readable text (it may be scanned images).\n{p}"
     return f"{p.name}\n{p}\n\n{_page(text, start, max_chars)}"
+
+
+
+@mcp.tool()
+def save_from_cloud(file_id: int, folder: str = "", open_it: bool = True) -> str:
+    """Save a chart, diagram or document Iriis made in the cloud (studio file id) onto this computer, in Documents
+    or the given allowed folder, and open it."""
+    import os
+
+    import httpx
+    url, key = os.environ.get("IRIIS_SERVER_URL", "").rstrip("/"), os.environ.get("IRIIS_API_KEY", "")
+    if not url:
+        raise ToolError("The computer doesn't know the cloud address (IRIIS_SERVER_URL); run iriis setup.")
+    url = url.replace("wss://", "https://").replace("ws://", "http://")
+    r = httpx.get(f"{url}/v1/files/{int(file_id)}", headers={"Authorization": f"Bearer {key}"}, timeout=60)
+    if r.status_code != 200:
+        raise ToolError(f"Couldn't fetch file {file_id} from the cloud (HTTP {r.status_code}).")
+    import re as _re
+    m = _re.search(r'filename="([^"]+)"', r.headers.get("content-disposition", ""))
+    name = Path(m.group(1)).name if m else f"iriis_file_{file_id}"
+    p = _resolve(str(Path(folder) / name) if folder else name)
+    if p.exists():
+        p = p.with_name(f"{p.stem}_{file_id}{p.suffix}")
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_bytes(r.content)
+    if open_it and hasattr(os, "startfile"):
+        os.startfile(p)  # noqa: S606  (the user's own file, opened with its usual app)
+    return _saved(p, f"{len(r.content) / 1024:.0f} KB" + (", opened" if open_it else ""))
 
 
 if __name__ == "__main__":

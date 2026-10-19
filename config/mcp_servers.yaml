@@ -172,6 +172,7 @@ mcpServers:
   documents:             # Word / Excel / PDF / PowerPoint on the user's PC (allowed folders only)
     command: python
     args: ["-m", "servers.documents"]
+    env: {IRIIS_SERVER_URL: "${IRIIS_SERVER_URL}", IRIIS_API_KEY: "${IRIIS_API_KEY}"}   # save_from_cloud
     tier: auto             # new files; replacing an existing file (overwrite=true) asks first
     tools: {append_to_spreadsheet: confirm}
     description: Create Word documents, Excel spreadsheets, PDFs and PowerPoint presentations, append rows to spreadsheets, and read docx, xlsx, csv, pptx, pdf, txt and md files in the allowed folders.
@@ -195,6 +196,14 @@ mcpServers:
     tier: auto             # read-only
     description: How Iriis herself works and what she can do right now - her skills, where each runs, what is connected, her own code and recent changes.
     keywords: [you, your, yourself, how, work, works, built, made, access, capabilities, skills, abilities, able, can, connected, code, version, update, updated, changed, new, features, setup, architecture, iriis]
+
+  studio:                # charts, diagrams and documents made in the cloud; sent to Telegram or saved to the PC
+    command: python
+    args: ["-m", "servers.studio"]
+    env: {TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN}", TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID}"}
+    tier: auto             # making files; send_file goes only to the user's own Telegram
+    description: Make charts and graphs, diagrams (flowcharts, org charts, mind maps, processes) and documents (PDF, Word, Excel, PowerPoint, with charts inside), and send them to the user's Telegram.
+    keywords: [chart, charts, graph, graphs, plot, diagram, diagrams, flowchart, flow, mind map, org chart, visual, visualise, visualize, draw, picture, image, pdf, document, report, slides, presentation, deck, spreadsheet, excel, word, send, telegram, file, files]
 
   # Unofficial messaging/social bridges: NEED INTERNET, may break, and risk account bans.
   # Read-mostly; every send/post tool stays at confirm. Their credentials live in their own env.
