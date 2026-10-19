@@ -218,6 +218,9 @@ mcpServers:
     requires_env: [IRIIS_HQ_KEY]
     needs_internet: true
     tier: auto             # reading is free; anything that reaches people or changes the world asks first
+    # HQ's copies of things Iriis does herself (her files show in the app; HQ's stay in HQ), and HQ's way back to her
+    exclude: [generate_pdf, generate_text_document, chart_render, capital_chart, deliver_long_analysis, web_search,
+              fetch_url, remember_fact, forget_memory, iriis_voice, seryn_twin, seryn_vision, current_chat_context]
     tools: {linkedin_outreach: confirm, job_applications: confirm, x_social: confirm, send_email: confirm,
             send_draft: confirm, cancel_draft: confirm, send_for_signature: confirm, cancel_calendly_meeting: confirm,
             close_case_and_reply_to_user: confirm, notify_affected_users: confirm, notify_provider_group: confirm,
