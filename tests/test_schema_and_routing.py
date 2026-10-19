@@ -123,3 +123,23 @@ def test_she_is_told_honestly_when_the_pc_link_is_down(tmp_path):
     system = agent._system()["content"]
     assert "computer is down" in system or "link to the user's computer is down" in system
     assert "never say you have no internet access" in system
+
+
+def test_whatsapp_requests_get_the_browser_with_the_real_catalog():
+    """160 tools, 64 per turn: 'who messaged me on whatsapp' must still reach the browser (it used not to)."""
+    import asyncio
+
+    from iriis.agent.tool_router import ToolRouter
+    from iriis.config import load_mcp_servers
+
+    def fake(server, n):
+        return [{"type": "function", "function": {"name": f"{server}__t{i}", "description": f"{server} tool {i}",
+                                                  "parameters": {}}} for i in range(n)]
+    sizes = {"seryn": 60, "browser": 22, "files": 9, "google": 9, "money": 9, "studio": 5, "documents": 7,
+             "shell": 1, "web": 3, "tasks": 5, "self": 5, "time_and_calc": 8, "memory": 5, "notes_reminders": 8}
+    cat = {s.name: {"description": s.description, "keywords": s.keywords, "tools": fake(s.name, sizes.get(s.name, 4))}
+           for s in load_mcp_servers() if s.enabled}
+    for q in ("check who messaged me lately on whatsapp", "any new whatsapp chats?", "reply to mum on whatsapp"):
+        picked = asyncio.run(ToolRouter(64).select(q, cat))
+        assert any(t["function"]["name"].startswith("browser__") for t in picked), q
+        assert len(picked) <= 64

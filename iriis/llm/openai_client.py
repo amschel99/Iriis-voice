@@ -19,6 +19,60 @@ from iriis.llm.base import LLMClient, LLMEvent, ToolCall
 _LOCAL = ("127.0.0.1", "localhost", "::1")
 
 
+import re  # noqa: E402
+
+# DeepSeek's own tool-call markup, e.g. <｜｜DSML｜｜ invoke name="x"> (fullwidth or ASCII bars).
+_DSML_START = re.compile(r"<[｜|]+\s*DSML")
+_MARKER_CHARS = set("<｜| DSML")
+_INVOKE = re.compile(r'invoke\s+name="([^"]+)"\s*>(.*?)</[｜|\s]*DSML[｜|\s]*invoke\s*>', re.S)
+_PARAM = re.compile(r'parameter\s+name="([^"]+)"(?:\s+string="(true|false)")?\s*>(.*?)</[｜|\s]*DSML[｜|\s]*parameter\s*>', re.S)
+
+
+class DSMLGuard:
+    """Streams text through, but holds back DeepSeek's DSML tool-call markup (which must never be spoken)."""
+
+    def __init__(self):
+        self.pending = ""
+        self.dsml = ""
+
+    def feed(self, text: str) -> str:
+        if self.dsml:
+            self.dsml += text
+            return ""
+        buf = self.pending + text
+        m = _DSML_START.search(buf)
+        if m:
+            self.dsml, self.pending = buf[m.start():], ""
+            return buf[:m.start()]
+        lt = buf.rfind("<")
+        if lt != -1 and len(buf) - lt < 10 and set(buf[lt:]) <= _MARKER_CHARS:
+            self.pending = buf[lt:]            # might be the start of a marker split across chunks
+            return buf[:lt]
+        self.pending = ""
+        return buf
+
+    def flush(self) -> str:
+        out, self.pending = ("" if self.dsml else self.pending), ""
+        return out
+
+
+def parse_dsml(text: str) -> list[ToolCall]:
+    calls = []
+    for name, body in _INVOKE.findall(text):
+        args: dict[str, Any] = {}
+        for pname, is_str, raw in _PARAM.findall(body):
+            raw = raw.strip()
+            if is_str == "false":
+                try:
+                    args[pname] = json.loads(raw)
+                    continue
+                except ValueError:
+                    pass
+            args[pname] = raw
+        calls.append(ToolCall(name=name.strip(), arguments=args, id=uuid.uuid4().hex[:8]))
+    return calls
+
+
 class _Retryable(Exception):
     pass
 
@@ -98,6 +152,7 @@ class OpenAICompatClient(LLMClient):
         partial: dict[int, dict[str, Any]] = {}
         stats: dict[str, Any] = {}
         reasoning: list[str] = []
+        guard = DSMLGuard()
         async with self.http.stream("POST", "/chat/completions", json=payload) as resp:
             if resp.status_code != 200:
                 body = (await resp.aread()).decode(errors="replace")
@@ -122,7 +177,9 @@ class OpenAICompatClient(LLMClient):
                 if delta.get("reasoning_content"):
                     reasoning.append(delta["reasoning_content"])
                 if delta.get("content"):
-                    yield LLMEvent(text=delta["content"])
+                    shown = guard.feed(delta["content"])
+                    if shown:
+                        yield LLMEvent(text=shown)
                 for tc in delta.get("tool_calls") or []:
                     slot = partial.setdefault(tc.get("index", 0), {"id": "", "name": "", "args": ""})
                     slot["id"] = tc.get("id") or slot["id"]
@@ -136,6 +193,15 @@ class OpenAICompatClient(LLMClient):
             except json.JSONDecodeError:
                 args = {"_raw": slot["args"]}
             calls.append(ToolCall(name=slot["name"], arguments=args if isinstance(args, dict) else {}, id=slot["id"] or uuid.uuid4().hex[:8]))
+        tail = guard.flush()
+        if tail:
+            yield LLMEvent(text=tail)
+        if guard.dsml:
+            # DeepSeek sometimes writes its tool calls as DSML text instead of real tool_calls. Never show it;
+            # turn it into real calls when tools were offered, otherwise drop it.
+            stats["dsml_text"] = True
+            if tools and not calls:
+                calls = parse_dsml(guard.dsml)
         if reasoning:
             stats["reasoning_content"] = "".join(reasoning)
         yield LLMEvent(tool_calls=calls, done=True, stats=stats)

@@ -64,7 +64,7 @@ llm:
   #   model openai/gpt-oss-120b, fallback_model openai/gpt-oss-20b
   temperature: 0.4
   max_tokens: 2048             # room for long answers (some models think before replying)
-  max_tool_iterations: 6
+  max_tool_iterations: 10
   history_max_tokens: 5000
   request_timeout_s: 60
   # Local / offline mode (python -m iriis --offline): Ollama on this machine.
@@ -125,7 +125,7 @@ permissions:
   confirm_words: ["yes", "yeah", "yep", "confirm", "confirmed", "do it", "go ahead", "sure", "okay", "ok", "proceed"]   # quoted: YAML reads bare yes as true
 
 tool_routing:
-  max_tools: 40                # above this, only tools of relevant servers are offered per turn
+  max_tools: 64                # above this, only tools of relevant servers are offered per turn
   method: keyword              # keyword (instant) | llm (one extra LLM call)
 
 memory:

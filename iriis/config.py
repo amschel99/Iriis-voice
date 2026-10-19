@@ -76,7 +76,7 @@ class LLMConfig(BaseModel):
     num_ctx: int = 8192
     keep_alive: str = "30m"
     think: bool = False
-    max_tool_iterations: int = 6
+    max_tool_iterations: int = 10
     history_max_tokens: int = 5000
     request_timeout_s: float = 120.0
 
@@ -165,7 +165,7 @@ class PermissionsConfig(BaseModel):
 
 
 class ToolRoutingConfig(BaseModel):
-    max_tools: int = 40
+    max_tools: int = 64
     method: Literal["keyword", "llm"] = "keyword"
 
 

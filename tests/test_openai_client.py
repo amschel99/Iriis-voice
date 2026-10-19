@@ -126,3 +126,24 @@ def test_reasoning_is_captured_and_sent_back_on_tool_turns(monkeypatch):
     msg = LLMClient.assistant_tool_message("", events[-1].tool_calls, events[-1].stats["reasoning_content"])
     sent = OpenAICompatClient._to_openai([msg])
     assert sent[0]["reasoning_content"] == "Let me check the time."
+
+
+def test_deepseek_dsml_tool_calls_are_hidden_and_parsed():
+    from iriis.llm.openai_client import DSMLGuard, parse_dsml
+    text = ('Let me check. <｜｜DSML｜｜ calls>\n<｜｜DSML｜｜ invoke name="self__read_my_code">\n'
+            '<｜｜DSML｜｜ parameter name="lines" string="false">60</｜｜DSML｜｜ parameter>\n'
+            '<｜｜DSML｜｜ parameter name="path" string="true">iriis/mcp_client/manager.py</ ｜｜DSML｜｜ parameter>\n'
+            '</｜｜DSML｜｜ invoke>\n</｜｜DSML｜｜ calls>')
+    g = DSMLGuard()
+    shown = "".join(g.feed(text[i:i + 3]) for i in range(0, len(text), 3)) + g.flush()   # split mid-marker
+    assert shown == "Let me check. " and "DSML" not in shown
+    calls = parse_dsml(g.dsml)
+    assert len(calls) == 1 and calls[0].name == "self__read_my_code"
+    assert calls[0].arguments == {"lines": 60, "path": "iriis/mcp_client/manager.py"}
+
+
+def test_plain_text_with_angle_brackets_still_flows():
+    from iriis.llm.openai_client import DSMLGuard
+    g = DSMLGuard()
+    out = g.feed("x < 5 and y <") + g.feed(" 3, done.") + g.flush()
+    assert out == "x < 5 and y < 3, done."

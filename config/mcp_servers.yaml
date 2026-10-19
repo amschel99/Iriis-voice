@@ -122,7 +122,9 @@ mcpServers:
       browser_network_request: blocked  # full request details can contain passwords / cookies
     exclude: [browser_emulate_media, browser_resize, browser_console_messages, browser_network_requests, browser_drag]
     description: Drive a real web browser on the user's computer - open sites, read them, click, type, fill forms, tabs.
-    keywords: [browser, browse, website, site, page, open, click, login, form, tab, chrome, youtube, google, buy, book, check, fill, sign]
+    keywords: [browser, browse, website, site, page, open, click, login, form, tab, chrome, youtube, google, buy, book, check, fill, sign,
+               whatsapp, message, messages, messaged, texted, chat, chats, dm, reply, unread, group, instagram, facebook, twitter, x,
+               linkedin, tiktok, notion, docs, sheets, drive, portal, dashboard, account, bank, online, web, app]
 
   web:                   # fast web search + page reading (no browser window, no API key)
     command: python

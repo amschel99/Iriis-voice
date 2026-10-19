@@ -178,9 +178,9 @@ class Agent:
                            "asked for them, say the computer link is down; never say you have no internet access."
                            if missing else "")
         # Route on the previous user message too, so a follow-up ("and the other one?") keeps its tools.
-        prev = next((m["content"] for m in reversed(self.history.messages)
-                     if m.get("role") == "user" and isinstance(m.get("content"), str)), "")
-        query = f"{query} {prev[:300]}"
+        prev = [m["content"] for m in reversed(self.history.messages)
+                if m.get("role") == "user" and isinstance(m.get("content"), str)][:2]
+        query = " ".join([query, *(p[:300] for p in prev)])
         return await self.router.select(query, catalog, self._llm_pick_servers)
 
     # ------------------------------------------------------------------ tool execution
