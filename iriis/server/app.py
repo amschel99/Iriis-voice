@@ -74,6 +74,7 @@ class Core:
         cfg = self.cfg.model_copy(deep=True)
         cfg.llm.max_tool_iterations = max(cfg.llm.max_tool_iterations, 20)
         cfg.llm.max_tokens = max(cfg.llm.max_tokens, 4096)
+        cfg.llm.history_max_tokens = max(cfg.llm.history_max_tokens, 30000)   # room for the pages it reads
         sid = f"task-{task_id}"
         session = Session(sid, self._make_agent(sid, cfg))
 

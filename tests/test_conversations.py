@@ -281,3 +281,14 @@ def test_interruption_remembers_what_the_user_heard(tmp_path):
     said = agent.history.messages[-1]["content"]
     assert said.startswith("The first option is paraffin.")
     assert "cut off" in said and "interrupted me here" in said and "third" not in said
+
+
+def test_one_huge_turn_is_trimmed_without_looping_forever():
+    """A background task's single turn with many long pages used to spin trim() forever (froze the brain)."""
+    from iriis.agent.memory import ConversationHistory
+    h = ConversationHistory(max_tokens=2000)
+    h.add({"role": "user", "content": "research KPLC tariffs"})
+    for i in range(12):
+        h.add({"role": "assistant", "content": "", "tool_calls": []})
+        h.add({"role": "tool", "content": "page text " * 2000, "tool_call_id": str(i)})
+    assert all(len(m["content"]) <= 2012 for m in h.messages if m["role"] == "tool")

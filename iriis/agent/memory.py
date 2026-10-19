@@ -35,7 +35,8 @@ class ConversationHistory:
             if idx is None:
                 # a single huge turn: truncate oversized tool outputs instead
                 for m in self.messages:
-                    if m["role"] == "tool" and len(m["content"]) > 2000:
+                    # (the marker makes it longer than 2000 again: never re-truncate the same message)
+                    if m["role"] == "tool" and len(m["content"]) > 2000 and not m["content"].endswith("[truncated]"):
                         m["content"] = m["content"][:2000] + "\n[truncated]"
                         break
                 else:
