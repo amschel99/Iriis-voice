@@ -204,3 +204,17 @@ def test_heartbeat_sees_how_her_reach_outs_landed_and_acts(tmp_path):
     assert "How your recent reach-outs landed" in prompt and "lunch reminder" in prompt and "no reply" in prompt
     assert wait == 90 * 60 and m.mood()["feeling"] == "attentive"
     assert ("push", "Quick nudge: the investor deck is due tomorrow.") in said
+
+
+def test_video_becomes_one_contact_sheet(tmp_path):
+    """A video is sent to the vision model as ONE grid image (fits free-tier rate limits), frames in order."""
+    import io
+    from PIL import Image
+    from servers.studio import contact_sheet
+    frames = []
+    for i in range(6):
+        b = io.BytesIO()
+        Image.new("RGB", (320, 180), (40 * i, 80, 120)).save(b, "JPEG")
+        frames.append((i * 0.8, b.getvalue()))
+    sheet = Image.open(io.BytesIO(contact_sheet(frames)))
+    assert sheet.width == 1500 and sheet.height == 2 * int(500 * 180 / 320)

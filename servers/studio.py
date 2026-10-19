@@ -496,9 +496,17 @@ def vision_describe(images: list[bytes], question: str, max_tokens: int = 700) -
             {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(_jpeg(b)).decode()}}
             for b in images[:limit]]
         try:
-            r = httpx.post(f"{base}/chat/completions", timeout=90, headers={"Authorization": f"Bearer {key}"},
-                           json={"model": model, "max_tokens": max_tokens, "temperature": 0.2,
-                                 "messages": [{"role": "user", "content": parts}]})
+            for attempt in range(3):
+                r = httpx.post(f"{base}/chat/completions", timeout=90, headers={"Authorization": f"Bearer {key}"},
+                               json={"model": model, "max_tokens": max_tokens, "temperature": 0.2,
+                                     "messages": [{"role": "user", "content": parts}]})
+                if r.status_code not in (429, 503) or attempt == 2:
+                    break
+                try:                                    # busy: wait as asked (capped), then try again
+                    wait = min(float(r.headers.get("retry-after", "") or 6 * (attempt + 1)), 20)
+                except ValueError:
+                    wait = 6 * (attempt + 1)
+                time.sleep(wait)
             r.raise_for_status()
             text = r.json()["choices"][0]["message"]["content"] or ""
             return re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
@@ -521,6 +529,28 @@ def _jpeg(data: bytes, side: int = 1280) -> bytes:
         return data
 
 
+def contact_sheet(frames: list[tuple[float, bytes]], cols: int = 3, width: int = 1500) -> bytes:
+    """Frames in a grid, left to right then top to bottom, each stamped with its time."""
+    import io
+
+    from PIL import Image, ImageDraw
+    ims = [Image.open(io.BytesIO(b)).convert("RGB") for _, b in frames]
+    cw = width // cols
+    ch = int(cw * ims[0].height / max(1, ims[0].width))
+    rows = (len(ims) + cols - 1) // cols
+    sheet = Image.new("RGB", (cw * cols, ch * rows), "black")
+    d = ImageDraw.Draw(sheet)
+    for i, ((t, _), im) in enumerate(zip(frames, ims)):
+        x, y = (i % cols) * cw, (i // cols) * ch
+        sheet.paste(im.resize((cw - 4, ch - 4)), (x + 2, y + 2))
+        label = f"{i + 1}  {int(t // 60)}:{int(t % 60):02d}"
+        d.rectangle((x + 6, y + 6, x + 12 + 9 * len(label), y + 30), fill="black")
+        d.text((x + 10, y + 10), label, fill="white")
+    out = io.BytesIO()
+    sheet.save(out, "JPEG", quality=82)
+    return out.getvalue()
+
+
 def _video_frames(data: bytes, n: int = 6) -> tuple[list[bytes], float]:
     import io
 
@@ -538,7 +568,7 @@ def _video_frames(data: bytes, n: int = 6) -> tuple[list[bytes], float]:
             if t + 1e-6 >= nxt:
                 out = io.BytesIO()
                 fr.to_image().save(out, "JPEG", quality=80)
-                frames.append(out.getvalue())
+                frames.append((t, out.getvalue()))
                 nxt = t + every
                 if len(frames) >= n:
                     break
@@ -568,8 +598,10 @@ def inspect_file(file_id: int, question: str = "") -> str:
     if mime.startswith("audio/") or low.endswith((".mp3", ".wav", ".ogg", ".oga", ".m4a", ".webm", ".flac", ".aac", ".opus")):
         return f"{name} (audio) transcript: " + (_transcribe(name, data, mime) or "(no speech heard)")
     if mime.startswith("video/") or low.endswith((".mp4", ".mov", ".mkv", ".avi", ".3gp")):
-        frames, dur = _video_frames(data)
-        seen = vision_describe(frames, f"These are {len(frames)} frames in order from a {dur:.0f} s video. {q}") if frames else ""
+        frames, dur = _video_frames(data, n=9 if len(data) > 2_000_000 else 6)
+        seen = vision_describe([contact_sheet(frames)], f"This image is a grid of {len(frames)} frames taken in order from a "
+                               f"{dur:.0f} s video (numbered, with their times; left to right, then top to bottom). "
+                               f"Describe what happens over time. {q}") if frames else ""
         try:
             heard = _transcribe(name, data, mime)
         except Exception:  # noqa: BLE001
