@@ -73,6 +73,17 @@ def compact_turn(turn: list[dict[str, Any]], budget: int = TURN_BUDGET_CHARS, ke
             removed += len(c) - len(m["content"])
     return removed
 
+MORE_TOOLS_NAME = "more_tools"
+MORE_TOOLS = {"type": "function", "function": {
+    "name": MORE_TOOLS_NAME,
+    "description": ("Only part of your tools are loaded each turn. If you need a skill that isn't in your list (the "
+                    "browser, WhatsApp, the terminal, files, email, Seryn, money, documents...), call this with what "
+                    "you need, e.g. 'run a terminal command' or 'browser'; those tools are added at once. Never tell "
+                    "the user something is unavailable before trying this."),
+    "parameters": {"type": "object", "properties": {"need": {"type": "string", "description": "the job or skill"}},
+                   "required": ["need"]}}}
+
+
 class Agent:
     def __init__(self, cfg: Config, llm: LLMClient, tools: ToolProvider | None,
                  permissions: PermissionManager, memory_facts: Callable[[], list[str]] | None = None,
@@ -185,6 +196,25 @@ class Agent:
 
     # ------------------------------------------------------------------ tool execution
 
+    async def _more_tools(self, need: str, tools: list[dict[str, Any]], known: set[str]) -> str:
+        """Add the tools for `need` (a job description or a skill name) to this turn's list, mid-turn."""
+        catalog = self.tools.servers_catalog() if self.tools else {}
+        named = [n for n in catalog if n.replace("_", " ") in need.lower() or n in need.lower()]
+        picked = [t for n in named for t in catalog[n]["tools"]]
+        if not picked:
+            scores = self.router._server_scores(need, catalog)
+            best = [n for n, sc in sorted(scores.items(), key=lambda kv: -kv[1]) if sc > 0][:2]
+            picked = [t for n in best for t in catalog[n]["tools"]]
+        added = [t for t in picked if t["function"]["name"] not in known][:40]
+        for t in added:
+            tools.insert(len(tools) - 1, t)
+            known.add(t["function"]["name"])
+        if not added:
+            have = ", ".join(sorted(catalog)) or "none"
+            return (f"No more tools match '{need}'. Skills that exist: {have}. If the one you need isn't there (for "
+                    "example the computer link is down), tell the user plainly.")
+        return "Now available: " + ", ".join(t["function"]["name"] for t in added) + ". Use them."
+
     async def _execute(self, call: ToolCall, known: set[str], cb: TurnCallbacks) -> str:
         args = {k: v for k, v in call.arguments.items() if not k.startswith("_")}
         if call.name not in known or self.tools is None:
@@ -262,6 +292,8 @@ class Agent:
 
         tools = await self._select_tools(user_text)
         known = {t["function"]["name"] for t in tools}
+        if self.tools and sum(len(s["tools"]) for s in self.tools.servers_catalog().values()) > len(tools):
+            tools = [*tools, MORE_TOOLS]      # not every tool fits in one turn: let her fetch what's missing
         turn: list[dict[str, Any]] = [{"role": "user", "content": user_text}]
 
         self._spoke = False
@@ -362,6 +394,10 @@ class Agent:
 
             turn.append(LLMClient.assistant_tool_message(full_text, calls, reasoning))
             for call in calls:
+                if call.name == MORE_TOOLS_NAME:
+                    output = await self._more_tools(str(call.arguments.get("need", "")), tools, known)
+                    turn.append(LLMClient.tool_result_message(call, output))
+                    continue
                 output = await self._execute(call, known, cb)
                 result.tool_calls.append({"name": call.name, "arguments": call.arguments, "result": output[:300]})
                 turn.append(LLMClient.tool_result_message(call, wrap_tool_result(call.name, output)))
