@@ -87,6 +87,13 @@ def setup(require_key, ws_authorised, api_key_env: str, core_ref):
             await ws.close(code=1013)
             return
         last_q: list[str] = []
+        try:       # what Iriis remembers about the user, so the camera knows who it's talking to
+            core = core_ref.get("core")
+            facts = [t for _, t in core.memory.all()[-60:]] if core and core.memory else []
+            if facts:
+                await up.send(json.dumps({"type": "about", "text": "\n".join(f"- {f}" for f in facts)[:4000]}))
+        except Exception:  # noqa: BLE001
+            pass
 
         def remember(role: str, text: str) -> None:
             core = core_ref.get("core")
