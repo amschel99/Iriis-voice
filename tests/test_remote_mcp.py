@@ -43,3 +43,17 @@ def test_server_env_expands_and_drops_unset(monkeypatch):
 def test_browser_uses_the_users_chrome():
     s = {x.name: x for x in load_mcp_servers()}["browser"]
     assert "--extension" in s.args and "PLAYWRIGHT_MCP_EXTENSION_TOKEN" in s.env
+
+
+def test_optional_connections_stay_off_until_configured(monkeypatch):
+    import asyncio
+
+    from iriis.config import Config
+    from iriis.mcp_client.manager import MCPManager
+    monkeypatch.delenv("VISION_MCP_URL", raising=False)
+    monkeypatch.delenv("VISION_ACCESS_KEY", raising=False)
+    m = MCPManager(Config(), only=["bench"])
+    problems = asyncio.run(m.start())
+    assert problems == [] and "bench" not in m.conns              # off, and not reported as broken
+    s = {x.name: x for x in load_mcp_servers()}["bench"]
+    assert s.requires_env == ["VISION_MCP_URL", "VISION_ACCESS_KEY"] and "VISION_ACCESS_KEY" in s.headers["Authorization"]

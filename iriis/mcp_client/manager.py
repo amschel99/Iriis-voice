@@ -136,7 +136,9 @@ class MCPManager:
         self.server_configs = load_mcp_servers(self.config.mcp_config)
         if self.only is not None:
             self.server_configs = [s for s in self.server_configs if s.name in self.only]
-        enabled = [s for s in self.server_configs if s.enabled]
+        import os
+        # optional connections (e.g. the bench camera) switch on only when their settings exist
+        enabled = [s for s in self.server_configs if s.enabled and all(os.environ.get(v) for v in s.requires_env)]
         for cfg in enabled:
             conn = _Conn(cfg)
             self.conns[cfg.name] = conn

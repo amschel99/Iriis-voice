@@ -142,6 +142,7 @@ mcpServers:
     transport: http
     url: https://seryn-twin-production.up.railway.app/mcp
     headers: {Authorization: "Bearer ${SERYN_API_KEY}"}
+    requires_env: [SERYN_API_KEY]
     needs_internet: true
     tier: auto             # read-only lookups
     tools:
@@ -207,6 +208,17 @@ mcpServers:
     tier: auto             # making files; send_file goes only to the user's own Telegram
     description: Make charts and graphs, diagrams (flowcharts, org charts, mind maps, processes) and documents (PDF, Word, Excel, PowerPoint, with charts inside), and send them to the user's Telegram.
     keywords: [chart, charts, graph, graphs, plot, diagram, diagrams, flowchart, flow, mind map, org chart, visual, visualise, visualize, draw, picture, image, pdf, document, report, slides, presentation, deck, spreadsheet, excel, word, send, telegram, file, files]
+
+  bench:                 # Seryn Vision (the bench camera assistant) over remote MCP; on when both are set
+    transport: http
+    url: ${VISION_MCP_URL}          # e.g. https://<iriis-visual domain>/mcp, or http://localhost:8000/mcp
+    headers: {Authorization: "Bearer ${VISION_ACCESS_KEY}"}
+    requires_env: [VISION_MCP_URL, VISION_ACCESS_KEY]
+    needs_internet: true
+    tier: auto
+    tools: {bench_start_procedure: confirm}
+    description: The user's workbench camera (their phone) - what it sees right now, instrument readings, snapshot, goal and step-by-step procedures, coach mode, and reviews of what happened in recent minutes or recorded videos.
+    keywords: [bench, workbench, camera, see, looking, look, watch, reading, thermometer, gauge, dial, solder, soldering, build, assembly, procedure, step, coach, recording, video, happened, snapshot, picture]
 
   # Unofficial messaging/social bridges: NEED INTERNET, may break, and risk account bans.
   # Read-mostly; every send/post tool stays at confirm. Their credentials live in their own env.

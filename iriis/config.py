@@ -196,7 +196,7 @@ class ServerConfig(BaseModel):
     # web: the desktop's copy (home connection, real Chrome) wins while it's online; this one covers when it's off.
     # seryn: the Seryn Twin on Railway over remote MCP (needs SERYN_API_KEY).
     cloud_servers: list[str] = Field(default_factory=lambda: ["time_and_calc", "memory", "notes_reminders", "web", "seryn",
-                                                                "tasks", "google", "money", "self", "studio"])
+                                                                "tasks", "google", "money", "self", "studio", "bench"])
     stt: bool = True                                   # load the STT model (voice + /v1/stt)
     tts: bool = True                                   # load the TTS model (spoken replies)
     confirm_timeout_s: float = 60.0
@@ -246,6 +246,7 @@ class MCPServerConfig(BaseModel):
     env: dict[str, str] = Field(default_factory=dict)
     url: str | None = None                             # http: $VARS are expanded
     headers: dict[str, str] = Field(default_factory=dict)  # http: e.g. {Authorization: "Bearer ${SERYN_API_KEY}"}
+    requires_env: list[str] = Field(default_factory=list)  # skipped quietly unless all of these are set
     tier: Tier = "confirm"
     tools: dict[str, Tier] = Field(default_factory=dict)  # per-tool tier overrides
     exclude: list[str] = Field(default_factory=list)      # tools (globs) never shown to the AI
