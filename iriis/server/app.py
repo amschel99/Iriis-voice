@@ -89,6 +89,14 @@ class Core:
         done = await run_turn(session, prompt, ignore, allow_confirm=False)
         return done["text"]
 
+    async def task_unfinished(self, goal: str, report: str) -> bool:
+        """A second look at a task report that has no STATUS line: is the deliverable there, or only progress notes?"""
+        prompt = ("A background task was given this instruction:\n" + goal[:2000] + "\n\nIt ended with this report:\n" +
+                  report[:4000] + "\n\nIs the task finished (the report delivers what was asked) or unfinished (it is "
+                  "progress notes, says work remains, or promises to finish later)? Answer with one word: FINISHED or UNFINISHED.")
+        out = (await self.llm.complete([{"role": "user", "content": prompt}])).upper()
+        return "UNFINISHED" in out
+
     async def notify(self, spoken: str, full: str = "") -> None:
         """Task reports: a short line out loud, the whole report in Telegram, a notification on every device."""
         await self.announce(spoken, telegram=False, push=False)
@@ -303,7 +311,7 @@ def create_app(cfg: Config | None = None) -> FastAPI:
         flusher = asyncio.create_task(core.conversations.run_flusher(cfg.memory.flush_interval_s))
         from iriis.agent.tasks import TaskRunner
         from iriis.agent.mind import run_calls
-        background = [asyncio.create_task(TaskRunner(core.run_task, core.notify, core.db).run()),
+        background = [asyncio.create_task(TaskRunner(core.run_task, core.notify, core.db, judge=core.task_unfinished).run()),
                       asyncio.create_task(core.telegram.run()),
                       asyncio.create_task(run_calls(core))]          # rings the alarms and calls the user set
         if not os.environ.get("IRIIS_NO_MIND"):

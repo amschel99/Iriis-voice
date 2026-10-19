@@ -126,14 +126,14 @@ def start_task(goal: str, when: str = "now", repeat: str = "", title: str = "") 
 def list_tasks(status: str = "") -> str:
     """Background tasks and routines with their status (scheduled, running, done, failed, cancelled), next run and
     the start of their latest report. status filters, e.g. "done" or "scheduled"."""
-    q, args = "SELECT id, title, repeat, status, next_run, last_run, result FROM tasks", ()
+    q, args = "SELECT id, title, repeat, status, next_run, last_run, result, runs FROM tasks", ()
     if status:
         q, args = q + " WHERE status = ?", (status.strip().lower(),)
     rows = get_db().execute(q + " ORDER BY id DESC LIMIT 25", args)
     if not rows:
         return "No tasks yet." if not status else f"No {status} tasks."
     out = []
-    for tid, title, rep, st, nxt, last, res in rows:
+    for tid, title, rep, st, nxt, last, res, runs in rows:
         line = f"{tid}. {title} - {st}"
         if rep:
             line += f", {_say_repeat(rep)}, next {_fmt(nxt)}"
@@ -141,7 +141,9 @@ def list_tasks(status: str = "") -> str:
             line += f", starts {_fmt(nxt)}"
         if last:
             line += f", last ran {_fmt(last)}"
-        if res:
+        if res and res.startswith("[in progress]"):
+            line += f" (still working, session {runs + 1}): {res[14:240].strip()}..."
+        elif res:
             line += f": {res[:140].strip()}{'...' if len(res) > 140 else ''}"
         out.append(line)
     return "\n".join(out)

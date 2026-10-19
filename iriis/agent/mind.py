@@ -392,10 +392,37 @@ class Mind:
                 if loops:
                     parts.append("Open loops (things pending; follow up when it fits):\n" +
                                  "\n".join(f"- {t}" for _, t in loops[:8]))
+            if not for_camera:
+                work = self.work_status()
+                if work:
+                    parts.append(work)
             return "Your own mind:\n" + "\n\n".join(parts)
         except Exception as e:  # noqa: BLE001  (her mind must never break a conversation)
             log.warning("mind context failed: %s", e)
             return ""
+
+    def work_status(self) -> str:
+        """Her background work as she should report it when asked 'what's the progress?'."""
+        rows = self.db.execute("SELECT id, title, status, runs, result, last_run FROM tasks WHERE status IN ('running', 'scheduled') "
+                               "OR last_run > ? ORDER BY id DESC LIMIT 8", (time.time() - 3 * 86400,))
+        if not rows:
+            return ""
+        lines = []
+        for tid, title, st, runs, res, last in rows:
+            res = (res or "").strip()
+            if res.startswith("[in progress]"):
+                state = f"in progress, {runs} session(s) so far; latest notes: {res[14:260]}"
+            elif st == "running":
+                state = "working on it right now"
+            elif st == "failed":
+                state = f"FAILED: {res[:200]}"
+            elif st == "done":
+                state = f"finished {_when(last, self.tz)}: {res[:160]}"
+            else:
+                state = st
+            lines.append(f"- task {tid} '{title}': {state}")
+        return ("Your background work (when asked about progress, answer from this honestly: what's done, what's left, "
+                "anything that went wrong; read the full report with task_result if needed):\n" + "\n".join(lines))
 
     # ------------------------------------------------------------------ after every conversation turn
     def after_turn(self, session_id: str, user_text: str, reply: str, tool_calls: list[dict[str, Any]]) -> None:

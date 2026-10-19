@@ -19,7 +19,8 @@ log = logging.getLogger("iriis.tasks")
 TASK_BRIEF = (
     "[Background task {id}: the user is NOT listening right now; you are working on this alone. Plan the steps and "
     "work through them with your tools: search, read two or three good sources (not just snippets), cross-check "
-    "numbers, and keep going until it's done or you hit a real blocker. You cannot ask questions or get "
+    "numbers, and keep going until it's done or you hit a real blocker. You have a limited number of tool steps per "
+    "session: once you've read enough to do a good job, stop reading and write the deliverable itself. You cannot ask questions or get "
     "confirmations now, so never send, post, buy, book or delete anything: prepare it (for example a draft) and say "
     "it is ready for the user to approve. Finish with a report the user can read later: the answer first, then the "
     "key details with where each came from (site names), then anything still needing the user. This report may be "
@@ -49,8 +50,11 @@ def first_sentence(text: str, limit: int = 220) -> str:
 
 class TaskRunner:
     def __init__(self, run: Callable[[int, str], Awaitable[str]], notify: Callable[[str, str], Awaitable[None]],
-                 db: DB | None = None, interval_s: float = 15.0, max_parallel: int = 2, timeout_s: float = 900.0):
-        """run(task_id, prompt) -> report text; notify(short spoken line, full report)."""
+                 db: DB | None = None, interval_s: float = 15.0, max_parallel: int = 2, timeout_s: float = 900.0,
+                 judge: Callable[[str, str], Awaitable[bool]] | None = None):
+        """run(task_id, prompt) -> report text; notify(short spoken line, full report);
+        judge(goal, report) -> True when the report is only progress notes (used when she leaves out STATUS)."""
+        self.judge = judge
         self.run_fn = run
         self.notify = notify
         self.db = db
@@ -102,9 +106,19 @@ class TaskRunner:
             prompt = TASK_BRIEF.format(id=tid, goal=goal)
             if not repeat and previous:      # carrying on, or re-run by hand: start from what she already has
                 prompt += CONTINUE.format(notes=str(previous).removeprefix("[in progress] ")[:6000])
+                if runs >= 2:                  # research has a budget: from the third session, deliver
+                    prompt += ("
+[This is session " + str(runs + 1) + ". Stop researching: write the finished "
+                               "deliverable now from your notes, filling a gap only if it's critical.]")
             try:
                 report = await asyncio.wait_for(self.run_fn(tid, prompt), self.timeout_s)
+                stated = re.search(r"STATUS:\s*(done|continue)", report, re.I) is not None
                 more, report = wants_more(report)
+                if not stated and self.judge and not repeat:
+                    try:
+                        more = await self.judge(goal, report)
+                    except Exception:  # noqa: BLE001
+                        more = False
                 more = more and not repeat and runs + 1 < MAX_SESSIONS
                 ok = bool(report.strip())
                 report = report.strip() or "I worked on it but ended without a report."

@@ -173,3 +173,27 @@ def test_unfinished_task_carries_on_from_its_notes(tdb):
     assert st == "done" and res.startswith("The guide") and "STATUS" not in res and runs == 2
     assert len(told) == 1 and "The guide" in told[0]
     assert wants_more("x\nSTATUS: continue") == (True, "x") and wants_more("plain report") == (False, "plain report")
+
+
+def test_missing_status_line_gets_a_second_look(tdb):
+    """She forgot 'STATUS:' and promised to finish 'shortly': the judge sees progress notes, so it carries on."""
+    from iriis.agent.tasks import TaskRunner
+    T.start_task("Write a guide to good article writing", title="Writing guide")
+
+    async def run(tid, prompt):
+        return "I'm still in the middle of it; read Orwell and McPhee. I'll have it ready shortly."
+
+    async def judge(goal, report):
+        return "still in the middle" in report
+
+    async def notify(spoken, full):
+        raise AssertionError("must not notify an unfinished task")
+    r = TaskRunner(run, notify, tdb, judge=judge)
+
+    async def go():
+        for row in r.due(5):
+            await r._work(row)
+    asyncio.run(go())
+    st, res = tdb.execute("SELECT status, result FROM tasks")[0]
+    assert st == "scheduled" and res.startswith("[in progress]")
+    assert "still working, session 2" in T.list_tasks()
