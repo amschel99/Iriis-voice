@@ -143,3 +143,33 @@ def test_overwriting_a_document_asks_first():
     assert pm.decide("documents__create_document", {"filename": "a.docx", "overwrite": True}).tier == "confirm"
     assert pm.decide("google__gmail_send_draft", {}).tier == "confirm"
     assert pm.decide("google__gmail_draft", {}).tier == "auto"
+
+
+def test_unfinished_task_carries_on_from_its_notes(tdb):
+    """She ran out of steps: the task isn't 'done'; it continues from her notes and the user hears only at the end."""
+    from iriis.agent.tasks import TaskRunner, wants_more
+    T.start_task("Learn article writing from credible sources and write a guide", title="Writing guide")
+    replies = ["Read Orwell and McPhee. Left: ProPublica, reading list.\nSTATUS: continue",
+               "The guide: lead with the point...\nSTATUS: done"]
+    seen, told = [], []
+
+    async def run(tid, prompt):
+        seen.append(prompt)
+        return replies.pop(0)
+
+    async def notify(spoken, full):
+        told.append(full)
+    r = TaskRunner(run, notify, tdb)
+
+    async def go():
+        for row in r.due(5):
+            await r._work(row)
+        tdb.execute("UPDATE tasks SET next_run = 0")
+        for row in r.due(5):
+            await r._work(row)
+    asyncio.run(go())
+    assert "Read Orwell and McPhee" in seen[1] and "Pick up exactly where you left off" in seen[1]
+    st, res, runs = tdb.execute("SELECT status, result, runs FROM tasks")[0]
+    assert st == "done" and res.startswith("The guide") and "STATUS" not in res and runs == 2
+    assert len(told) == 1 and "The guide" in told[0]
+    assert wants_more("x\nSTATUS: continue") == (True, "x") and wants_more("plain report") == (False, "plain report")

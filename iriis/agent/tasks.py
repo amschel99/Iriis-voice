@@ -23,8 +23,21 @@ TASK_BRIEF = (
     "confirmations now, so never send, post, buy, book or delete anything: prepare it (for example a draft) and say "
     "it is ready for the user to approve. Finish with a report the user can read later: the answer first, then the "
     "key details with where each came from (site names), then anything still needing the user. This report may be "
-    "longer than a spoken reply; plain text, short paragraphs, no tables.]\n\nTask: {goal}"
+    "longer than a spoken reply; plain text, short paragraphs, no tables. End with one last line: 'STATUS: done' if "
+    "the task is finished, or 'STATUS: continue' if you ran out of steps or time and should keep going in another "
+    "session (then the report is your progress notes: what you've done and exactly what's left).]\n\nTask: {goal}"
 )
+CONTINUE = ("\n\n[You already worked on this in an earlier session. Your progress notes:\n{notes}\n"
+            "Pick up exactly where you left off; don't redo what's done.]")
+MAX_SESSIONS = 6      # a one-off task may continue over this many sessions before it reports what it has
+
+
+def wants_more(report: str) -> tuple[bool, str]:
+    """(should continue, report without the status line). The status line is the model's own judgement."""
+    m = re.search(r"\n?\s*STATUS:\s*(done|continue)\s*\.?\s*$", report.strip(), re.I)
+    if not m:
+        return False, report.strip()
+    return m.group(1).lower() == "continue", report.strip()[:m.start()].strip()
 
 
 def first_sentence(text: str, limit: int = 220) -> str:
@@ -66,11 +79,15 @@ class TaskRunner:
         claimed = []
         for tid in ids:
             rows = db.execute("UPDATE tasks SET status = 'running', last_run = ? WHERE id = ? AND status = 'scheduled' "
-                              "RETURNING id, title, goal, repeat, runs", (time.time(), tid))
+                              "RETURNING id, title, goal, repeat, runs, result", (time.time(), tid))
             claimed += [tuple(r) for r in rows]
         return claimed
 
-    def finish(self, tid: int, repeat: str, runs: int, report: str, ok: bool) -> None:
+    def finish(self, tid: int, repeat: str, runs: int, report: str, ok: bool, more: bool = False) -> None:
+        if more:      # unfinished one-off: keep the notes as progress and carry on in a minute
+            self._db().execute("UPDATE tasks SET status = 'scheduled', result = ?, next_run = ?, runs = ? WHERE id = ? "
+                               "AND status = 'running'", (f"[in progress] {report}", time.time() + 60, runs + 1, tid))
+            return
         from servers.tasks import next_run
         nxt = next_run(repeat, time.time()) if repeat else None
         status = "scheduled" if nxt else ("done" if ok else "failed")
@@ -78,11 +95,17 @@ class TaskRunner:
                            (status, report, nxt, runs + 1, tid))
 
     async def _work(self, row: tuple[Any, ...]) -> None:
-        tid, title, goal, repeat, runs = row
+        tid, title, goal, repeat, runs, previous = (*row, None)[:6]
         async with self.sem:
             t0 = time.time()
+            more = False
+            prompt = TASK_BRIEF.format(id=tid, goal=goal)
+            if not repeat and previous:      # carrying on, or re-run by hand: start from what she already has
+                prompt += CONTINUE.format(notes=str(previous).removeprefix("[in progress] ")[:6000])
             try:
-                report = await asyncio.wait_for(self.run_fn(tid, TASK_BRIEF.format(id=tid, goal=goal)), self.timeout_s)
+                report = await asyncio.wait_for(self.run_fn(tid, prompt), self.timeout_s)
+                more, report = wants_more(report)
+                more = more and not repeat and runs + 1 < MAX_SESSIONS
                 ok = bool(report.strip())
                 report = report.strip() or "I worked on it but ended without a report."
             except asyncio.TimeoutError:
@@ -90,8 +113,10 @@ class TaskRunner:
             except Exception as e:  # noqa: BLE001
                 ok, report = False, f"It failed: {e.__class__.__name__}: {str(e)[:300]}"
                 log.exception("task %s failed", tid)
-            await asyncio.to_thread(self.finish, tid, repeat, runs, report, ok)
-            log.info("task %s %s in %.0fs", tid, "done" if ok else "failed", time.time() - t0)
+            await asyncio.to_thread(self.finish, tid, repeat, runs, report, ok, more)
+            log.info("task %s %s in %.0fs", tid, "continues" if more else "done" if ok else "failed", time.time() - t0)
+            if more:
+                return        # keeps working quietly; the user hears when it's really done
             spoken = (f"Your task {title} is done. {first_sentence(report)}" if ok
                       else f"Your task {title} didn't finish. {first_sentence(report)}")
             try:
