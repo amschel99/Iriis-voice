@@ -7,7 +7,7 @@ from typing import Any, Awaitable, Callable
 # Always offered: small (few tools) and broadly useful. Web search is here so she never thinks she's offline;
 # tasks so any bigger job can go to the background. Big servers (seryn has ~50 tools) are offered only when the
 # request is about them, otherwise they'd crowd everything else out of the per-turn tool budget.
-CORE_SERVERS = ("time_and_calc", "memory", "web", "tasks")
+CORE_SERVERS = ("time_and_calc", "memory", "web", "tasks", "self")
 
 _STOP = set("a an the to of in on for and or is are be me my i you it this that what how can please could would with do does at".split())
 

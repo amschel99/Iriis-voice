@@ -31,6 +31,11 @@ COPY --from=models /build/models ./models
 COPY iriis ./iriis
 COPY servers ./servers
 COPY config ./config
+# The rest of the project, so Iriis can read how she works (servers/self_knowledge.py).
+COPY README.md pyproject.toml requirements.txt requirements-server.txt ./
+COPY scripts ./scripts
+COPY deploy ./deploy
+COPY bin ./bin
 RUN mkdir -p data logs
 ENV IRIIS__STT__BACKEND=faster_whisper IRIIS__STT__MODEL=models/stt/faster-whisper-small.en
 # Storage: set DATABASE_URL (Railway Postgres) to persist memories, notes, reminders and the audit log.

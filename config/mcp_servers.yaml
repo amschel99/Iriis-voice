@@ -187,6 +187,15 @@ mcpServers:
     description: Personal and business money tracker in KES (expenses, income, M-Pesa SMS import, budgets, summaries, CSV export), stored in the cloud database.
     keywords: [money, spend, spent, spending, expense, expenses, budget, budgets, mpesa, m-pesa, income, sales, sold, paid, pay, payment, ksh, kes, shillings, bob, cost, costs, bought, received, transaction, transactions, till, paybill, withdraw, airtime, rent, salary, profit, balance, finances, export]
 
+  self:                  # Iriis reads her own deployed code, live status and recent changes (cloud)
+    command: python
+    args: ["-m", "servers.self_knowledge"]
+    env: {PORT: "${PORT}", IRIIS_API_KEY: "${IRIIS_API_KEY}", RAILWAY_GIT_COMMIT_SHA: "${RAILWAY_GIT_COMMIT_SHA}",
+          RAILWAY_GIT_COMMIT_MESSAGE: "${RAILWAY_GIT_COMMIT_MESSAGE}"}
+    tier: auto             # read-only
+    description: How Iriis herself works and what she can do right now - her skills, where each runs, what is connected, her own code and recent changes.
+    keywords: [you, your, yourself, how, work, works, built, made, access, capabilities, skills, abilities, able, can, connected, code, version, update, updated, changed, new, features, setup, architecture, iriis]
+
   # Unofficial messaging/social bridges: NEED INTERNET, may break, and risk account bans.
   # Read-mostly; every send/post tool stays at confirm. Their credentials live in their own env.
   whatsapp:              # e.g. a WAHA (whatsapp-web.js / Baileys) MCP bridge on localhost

@@ -196,7 +196,7 @@ class ServerConfig(BaseModel):
     # web: the desktop's copy (home connection, real Chrome) wins while it's online; this one covers when it's off.
     # seryn: the Seryn Twin on Railway over remote MCP (needs SERYN_API_KEY).
     cloud_servers: list[str] = Field(default_factory=lambda: ["time_and_calc", "memory", "notes_reminders", "web", "seryn",
-                                                                "tasks", "google", "money"])
+                                                                "tasks", "google", "money", "self"])
     stt: bool = True                                   # load the STT model (voice + /v1/stt)
     tts: bool = True                                   # load the TTS model (spoken replies)
     confirm_timeout_s: float = 60.0
