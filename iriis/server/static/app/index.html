@@ -1738,7 +1738,8 @@ async function checkCalls(forceId, autoAnswer) {
   let list = [];
   try { const r = await fetch("/v1/calls?status=ringing"); if (r.status === 404) { callsOff = true; return; } if (!r.ok) return; list = await r.json(); } catch (e) { return; }
   const c = list.find((x) => forceId ? x.id === forceId : !handledCalls.has(x.id) && now() - (x.at || 0) < 900);
-  if (!c) { if (forceId) toast("You missed a call from Iriis"); return; }
+  // opened from a call notification after it stopped ringing: call her back (she says why she called)
+  if (!c) { if (forceId) answerCall({ id: forceId, reason: "" }); return; }
   if (autoAnswer) answerCall(c); else showRing(c);
 }
 if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", (e) => { const d = e.data || {}; if (d.kind === "call") checkCalls(+d.call_id || undefined, !!d.answer); });
