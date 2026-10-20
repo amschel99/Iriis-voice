@@ -43,6 +43,10 @@ def record_error(where: str, err: BaseException | str, **info) -> None:
     ERRORS.append({"ts": time.time(), "where": where, "error": f"{err.__class__.__name__}: {err}"[:500]
                    if isinstance(err, BaseException) else str(err)[:500], "info": info, "trace": tb})
     log.warning("error in %s: %s %s", where, err, info)
+
+
+import iriis.agent.loop as _loop  # noqa: E402
+_loop.ERROR_HOOK = record_error
 STATIC = Path(__file__).parent / "static"
 
 
@@ -565,6 +569,24 @@ def create_app(cfg: Config | None = None) -> FastAPI:
             record_error("stt transcribe", e, **info, seconds=round(len(audio) / 16000, 1))
             raise HTTPException(503, "Speech recognition failed on the server; try again.") from e
         return {"text": tr.text, "duration_s": round(tr.duration_s, 2), "elapsed_ms": round(tr.elapsed_s * 1000)}
+
+    @app.get("/v1/phone/status", dependencies=[Depends(require_key)])
+    async def phone_status(request: Request):
+        """How a call reaches the owner: app notifications (devices signed up) and the ntfy phone alarm."""
+        from iriis.server import phone
+        core: Core = request.app.state.core
+        n = await asyncio.to_thread(lambda: core.db.execute("SELECT COUNT(*) FROM push_subs")[0][0])
+        return {"push_devices": n, "ntfy_alarm": phone.configured() or "off"}
+
+    @app.post("/v1/phone/test", dependencies=[Depends(require_key)])
+    async def phone_test():
+        """Ring the phone through ntfy now, to check the alarm works."""
+        from iriis.server import phone
+        try:
+            used = await phone.call("This is a test call from Iriis. If your phone rang, calls will reach you.")
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(502, str(e)) from e
+        return {"rang": bool(used), "via": used or "not set up (add NTFY_TOPIC)"}
 
     @app.get("/v1/debug/errors", dependencies=[Depends(require_key)])
     async def debug_errors(limit: int = 20):

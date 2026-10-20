@@ -779,9 +779,27 @@ async def run_calls(core: "Core", every: float = 10.0) -> None:
                     if nxt:
                         await asyncio.to_thread(db.insert, "INSERT INTO calls (at, reason, opening, status, repeat, source, created) "
                                                 "VALUES (?, ?, ?, 'scheduled', ?, ?, ?)", (nxt, reason, opening, repeat, source, now))
+            # ring his phone through ntfy (free; rings even locked with the app closed), once per call
+            from iriis.server import phone
+            after = float(os.environ.get("PHONE_AFTER_S", "0"))
+            if phone.configured():
+                ringing = await asyncio.to_thread(db.execute, "SELECT id, reason, opening FROM calls WHERE status = 'ringing' "
+                                                  "AND rang <= ?", (now - after,))
+                for cid, reason, opening in ringing:
+                    if cid in _PHONED:
+                        continue
+                    _PHONED.add(cid)
+                    try:
+                        await phone.call(reason, opening or "", cid)
+                    except Exception as e:  # noqa: BLE001
+                        log.warning("phone call failed: %s", e)
+                        rec = getattr(__import__("iriis.agent.loop", fromlist=["ERROR_HOOK"]), "ERROR_HOOK", None)
+                        if rec:
+                            rec("phone call", e, call_id=cid)
             missed = await asyncio.to_thread(db.execute, "UPDATE calls SET status = 'missed' WHERE status = 'ringing' AND rang < ? "
-                                             "RETURNING id, reason, source", (now - 120,))
-            for _cid, reason, source in missed:
+                                             "RETURNING id, reason, source, rang", (now - 120,))
+            for _cid, reason, source, rang in missed:
+                await _missed_call_note(core, reason, rang)
                 if source == "user" and not reason.startswith("Again: "):      # an alarm: one more try, like snooze
                     await asyncio.to_thread(db.insert, "INSERT INTO calls (at, reason, opening, status, repeat, source, created) "
                                             "VALUES (?, ?, '', 'scheduled', '', 'user', ?)", (now + 300, "Again: " + reason, now))
@@ -793,6 +811,27 @@ async def run_calls(core: "Core", every: float = 10.0) -> None:
         except Exception as e:  # noqa: BLE001
             log.warning("call watcher: %s", e)
         await asyncio.sleep(every)
+
+
+_PHONED: set[int] = set()      # calls already escalated to the real phone
+
+
+async def _missed_call_note(core: "Core", reason: str, rang: float | None) -> None:
+    """A missed call shows in the chat (like WhatsApp's 'Missed voice call') and as a notification."""
+    tz = ZoneInfo(core.cfg.timezone or "Africa/Nairobi")
+    at = dt.datetime.fromtimestamp(rang or time.time(), tz).strftime("%H:%M")
+    text = f"📞 Missed call from me at {at}: {reason.removeprefix('Again: ')}"
+    try:
+        await asyncio.to_thread(core.conversations.append, "owner", "assistant", text)
+        s = core.sessions.sessions.get("owner")
+        if s:
+            s.agent.history.add({"role": "assistant", "content": text})
+    except Exception as e:  # noqa: BLE001
+        log.warning("missed-call note failed: %s", e)
+    try:
+        await core.push(text)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 async def ring(core: "Core", cid: int, reason: str) -> None:

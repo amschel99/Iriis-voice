@@ -81,3 +81,36 @@ def test_a_cut_off_tool_call_is_explained_not_run():
     out = asyncio.run(agent._execute(ToolCall("studio__make_document", {"_raw": '{"kind": "pdf", "content": "# Gui'}, "c1"),
                                      {"studio__make_document"}, None))
     assert out.startswith("ERROR: your call to this tool was cut off")
+
+
+def test_claimed_action_without_a_tool_is_checked(monkeypatch, tmp_path):
+    """'Set. Thirty seconds.' with no tool call: she's made to actually do it (or take it back)."""
+    from tests.test_server import AUTH, make_client
+    from iriis.llm.base import ToolCall
+    script = ["Set. Thirty seconds.",
+              [ToolCall("time_and_calc__calculate", {"expression": "30"}, "c1")],
+              "Done, it's set for real now."]
+    client, fake = make_client(monkeypatch, script, tmp_path)
+    with client:
+        d = client.post("/v1/chat", headers=AUTH, json={"message": "call me 30 secs from now", "stream": False}).json()
+    assert d["tool_calls"] and d["tool_calls"][0]["name"] == "time_and_calc__calculate"
+    assert any("System check" in str(m.get("content")) for m in fake.seen[1])
+
+
+def test_attachments_are_opened_before_she_answers(monkeypatch, tmp_path):
+    from tests.test_server import AUTH, make_client
+    client, fake = make_client(monkeypatch, ["It's a whiteboard with the melt point."], tmp_path)
+    with client:
+        core = client.app.state.core
+        opened = []
+
+        async def call_tool(name, args, confirmed=False):
+            opened.append((name, args))
+            return "whiteboard.png (picture): Melt point 12.4 C"
+        core.tools.call_tool = call_tool
+        client.post("/v1/chat", headers=AUTH, json={"message": '[attachment file:7 "board.jpg" image/jpeg 40 KB]\nWhere?',
+                                                    "session_id": "owner", "stream": False})
+        h = client.get("/v1/history", headers=AUTH).json()
+    assert opened and opened[0][0] == "studio__inspect_file" and opened[0][1]["file_id"] == 7
+    assert "Melt point 12.4" in fake.seen[0][-1]["content"]
+    assert "Melt point" not in h[-2]["content"]          # the chat keeps what he sent, not the reading

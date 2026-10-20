@@ -218,3 +218,65 @@ def test_video_becomes_one_contact_sheet(tmp_path):
         frames.append((i * 0.8, b.getvalue()))
     sheet = Image.open(io.BytesIO(contact_sheet(frames)))
     assert sheet.width == 1500 and sheet.height == 2 * int(500 * 180 / 320)
+
+
+def test_missed_call_shows_in_chat_and_unanswered_calls_ring_the_real_phone(tmp_path, monkeypatch):
+    m, core, said = make_mind(tmp_path)
+    core.sessions = SimpleNamespace(sessions={})
+    import iriis.server.webapp as w
+    import iriis.server.phone as P
+
+    async def fake_push(*a, **k):
+        return 1
+    monkeypatch.setattr(w, "push_all", fake_push)
+    monkeypatch.setattr(P, "configured", lambda: "ntfy")
+    phoned = []
+
+    async def fake_call(reason, opening="", call_id=None):
+        phoned.append(reason)
+        return "ntfy"
+    monkeypatch.setattr(P, "call", fake_call)
+    monkeypatch.setenv("PHONE_AFTER_S", "0")
+    now = time.time()
+    core.db.insert("INSERT INTO calls (at, reason, opening, status, repeat, source, created) VALUES (?, 'Gym wake-up', '', "
+                   "'scheduled', '', 'user', ?)", (now - 1, now))
+
+    async def go():
+        t = asyncio.create_task(run_calls(core, every=0.05))
+        await asyncio.sleep(0.3)
+        core.db.execute("UPDATE calls SET rang = ? WHERE status = 'ringing'", (time.time() - 200,))
+        await asyncio.sleep(0.3)
+        t.cancel()
+    asyncio.run(go())
+    assert phoned == ["Gym wake-up"]                                         # rang his real phone once
+    notes = [a for k, a in said if k == "chat"]
+    assert any("Missed call from me at" in a[2] and "Gym wake-up" in a[2] for a in notes)
+    assert any(k == "push" and "Missed call" in t for k, t in said)
+
+
+
+def test_ntfy_rings_with_top_priority_and_an_answer_link(monkeypatch):
+    import iriis.server.phone as P
+    monkeypatch.setenv("NTFY_TOPIC", "iriis-secret-topic")
+    monkeypatch.setenv("IRIIS_PUBLIC_URL", "https://iriis.example")
+    sent = {}
+
+    class C:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, content=None, headers=None):
+            sent.update(url=url, body=content.decode(), headers=headers)
+            return SimpleNamespace(status_code=200, text="ok")
+    monkeypatch.setattr(P.httpx, "AsyncClient", C)
+    assert asyncio.run(P.call("Gym wake-up", "", 12)) == "ntfy"
+    assert sent["url"] == "https://ntfy.sh/iriis-secret-topic" and sent["headers"]["Priority"] == "5"
+    assert sent["headers"]["Click"] == "https://iriis.example/app?call=12&answer=1" and sent["body"] == "Gym wake-up"
+    monkeypatch.delenv("NTFY_TOPIC")
+    assert P.configured() == "" and asyncio.run(P.call("x")) == ""

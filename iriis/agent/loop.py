@@ -76,6 +76,17 @@ def compact_turn(turn: list[dict[str, Any]], budget: int = TURN_BUDGET_CHARS, ke
 # "yes to all" / "always" / "don't ask again": approve this kind of action for the next 10 minutes
 YES_TO_ALL = re.compile(r"\b(yes to all|yes all|all of (them|it)|always|don'?t ask|stop asking|go ahead with (all|everything))\b", re.I)
 
+# She says something was done ("Set.", "Scheduled", "I've sent it") but no tool ran this turn: make her check.
+ACTION_CLAIM = re.compile(
+    r"\b(set|scheduled|booked|sent|saved|added|created|logged|cancelled|canceled|deleted|reminder is|alarm is|"
+    r"call(?:ing)? you at|i'?ll (?:call|ring) you|it'?s (?:in|on) (?:the|your) (?:list|calendar)|done)\b", re.I)
+VERIFY_NUDGE = ("(System check: your reply says something was done, set, scheduled, sent or saved, but you did not call "
+                "any tool in this turn, so nothing actually happened. If the user asked for an action, call the right "
+                "tool now and then confirm from its result. If nothing needed doing, correct your reply in one short "
+                "sentence. Never claim an action without a tool result.)")
+ATTACH_RE = re.compile(r'\[attachment file:(\d+) "([^"]*)" ([^\s\]]+)')
+ERROR_HOOK = None      # set by the server: ERROR_HOOK(where, error, **info) keeps tool failures in its error log
+
 MORE_TOOLS_NAME = "more_tools"
 MORE_TOOLS = {"type": "function", "function": {
     "name": MORE_TOOLS_NAME,
@@ -273,6 +284,11 @@ class Agent:
                 filler_task.cancel()
         duration = (time.perf_counter() - start) * 1000
         result = redact_secrets(result)
+        if (error or result.startswith("ERROR")) and ERROR_HOOK:
+            try:
+                ERROR_HOOK(f"tool {call.name}", error or result[:300], args=json.dumps(args, default=str)[:300])
+            except Exception:  # noqa: BLE001
+                pass
         self.audit.record(tool=call.name, args=args, tier=decision.tier, confirmed=confirmed, executed=not error,
                           result=result, error=error, duration_ms=duration)
         cb.show("tool", f"<- {call.name} ({duration:.0f} ms): {result[:200]}")
@@ -310,9 +326,12 @@ class Agent:
         known = {t["function"]["name"] for t in tools}
         if self.tools and sum(len(s["tools"]) for s in self.tools.servers_catalog().values()) > len(tools):
             tools = [*tools, MORE_TOOLS]      # not every tool fits in one turn: let her fetch what's missing
-        turn: list[dict[str, Any]] = [{"role": "user", "content": user_text}]
+        seen = await self._open_attachments(user_text, cb)
+        turn: list[dict[str, Any]] = [{"role": "user", "content": user_text + seen}]
+        self._said = user_text            # what's saved in the conversation (without the attachment readings)
 
         self._spoke = False
+        self._verified = False
         try:
             return await self._run(turn, tools, known, cb, result, t0)
         except asyncio.CancelledError:
@@ -330,6 +349,30 @@ class Agent:
             self.history.extend([turn[0], {"role": "assistant", "content": note}])
             self._save(user_text, note)
             raise
+
+    async def _open_attachments(self, text: str, cb: TurnCallbacks) -> str:
+        """Files the user sent are read before she answers (she used to answer 'I can't see it' without looking)."""
+        found = ATTACH_RE.findall(text or "")
+        if not found or not self.tools:
+            return ""
+        question = ATTACH_RE.sub("", text).replace("]", " ").strip()[:500]
+        notes = []
+        for fid, name, mime in found[:4]:
+            if "[voice]" in text and mime.startswith("audio/"):
+                continue                      # a voice note's transcript is already in the message
+            cb.show("tool", f"-> studio__inspect_file {{\"file_id\": {fid}}}")
+            try:
+                out = await self.tools.call_tool("studio__inspect_file", {"file_id": int(fid), "question": question},
+                                                 confirmed=False)
+            except Exception as e:  # noqa: BLE001
+                out = f"ERROR: {e}"
+                if ERROR_HOOK:
+                    ERROR_HOOK("attachment", e, file_id=fid, name=name, mime=mime)
+            notes.append(f"file {fid} ({name}): {str(out)[:6000]}")
+        if not notes:
+            return ""
+        return ("\n\n[What the attached files contain (you opened them already; answer from this, and say so plainly "
+                "if a file couldn't be read):\n" + "\n".join(notes) + "]")
 
     async def _run(self, turn, tools, known, cb, result, t0) -> TurnResult:
         first_token_seen = False
@@ -402,6 +445,12 @@ class Agent:
                 result.timings["total_ms"] = (time.perf_counter() - t0) * 1000
                 return result
 
+            if (not calls and not result.tool_calls and not getattr(self, "_verified", False)
+                    and ACTION_CLAIM.search(full_text) and tools):
+                self._verified = True            # one check per turn: she must do it, or take it back
+                turn.append({"role": "assistant", "content": full_text})
+                nudge = [{"role": "user", "content": VERIFY_NUDGE}]
+                continue
             if not calls:
                 spoken = SCREEN_MARKER.split(full_text)[0].strip()
                 turn.append({"role": "assistant", "content": full_text})
@@ -428,7 +477,7 @@ class Agent:
                     made.append(fid)
         saved = (result.text or "(no reply)") + "".join(f"\n[file:{f}]" for f in made)
         self.history.extend(turn)
-        self._save(turn[0]["content"], saved)
+        self._save(getattr(self, "_said", None) or turn[0]["content"], saved)
         self.last_active = time.time()
         self._maybe_summarize()
         if self.mind:
