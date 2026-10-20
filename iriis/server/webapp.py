@@ -228,6 +228,7 @@ def setup(require_key):
         if not rows:
             raise HTTPException(404, "that call isn't ringing")
         i, reason, opening = rows[0]
+        _stop_phone_alarm(call_id)
         return {"id": i, "reason": reason or "", "opening": opening or ""}
 
     async def _set_call(call_id: int, request: Request, status: str, allowed: tuple[str, ...]):
@@ -237,6 +238,7 @@ def setup(require_key):
                                        "RETURNING id", (status, call_id, *allowed))
         if not rows:
             raise HTTPException(404, "no such call")
+        _stop_phone_alarm(call_id)
         return {"ok": True}
 
     @router.post("/v1/calls/{call_id}/decline", dependencies=deps)
@@ -301,6 +303,17 @@ def setup(require_key):
         return {"sent": n}
 
     return router
+
+
+_STOPPING: set = set()
+
+
+def _stop_phone_alarm(call_id: int) -> None:
+    """Picked up (or declined) in the app: stop the ntfy alarm still ringing on the phone, in the background."""
+    from iriis.server import phone
+    t = asyncio.get_running_loop().create_task(phone.stop(call_id))
+    _STOPPING.add(t)
+    t.add_done_callback(_STOPPING.discard)
 
 
 # ---------------------------------------------------------------------------- VAPID + sending

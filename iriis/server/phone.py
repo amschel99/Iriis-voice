@@ -37,6 +37,8 @@ async def call(reason: str, opening: str = "", call_id: int | None = None) -> st
     topic = os.environ["NTFY_TOPIC"].strip()
     url = _app_url(call_id)
     headers = {"Title": "Iriis is calling", "Priority": "5", "Tags": "telephone_receiver,rotating_light"}
+    if call_id:
+        headers["X-Sequence-ID"] = f"iriis-call-{call_id}"     # lets us dismiss it once the call is picked up
     if url:
         headers["Click"] = url
         headers["Actions"] = f"view, Answer, {url}, clear=true"
@@ -46,3 +48,22 @@ async def call(reason: str, opening: str = "", call_id: int | None = None) -> st
     if r.status_code >= 300:
         raise RuntimeError(f"ntfy refused the alert: HTTP {r.status_code} {r.text[:200]}")
     return "ntfy"
+
+
+async def stop(call_id: int) -> bool:
+    """The call was answered or declined in the app: stop the ntfy alarm on the phone (clear, then delete, the
+    notification with that call's sequence ID). Never raises."""
+    if not configured() or not call_id:
+        return False
+    server = os.environ.get("NTFY_SERVER", "https://ntfy.sh").rstrip("/")
+    base = f"{server}/{os.environ['NTFY_TOPIC'].strip()}/iriis-call-{call_id}"
+    ok = False
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.put(f"{base}/clear")
+            ok = r.status_code < 300
+            r = await c.delete(base)
+            ok = ok or r.status_code < 300
+    except Exception as e:  # noqa: BLE001
+        log.info("couldn't stop the ntfy alarm: %s", e)
+    return ok

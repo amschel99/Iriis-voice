@@ -280,3 +280,31 @@ def test_ntfy_rings_with_top_priority_and_an_answer_link(monkeypatch):
     assert sent["headers"]["Click"] == "https://iriis.example/app?call=12&answer=1" and sent["body"] == "Gym wake-up"
     monkeypatch.delenv("NTFY_TOPIC")
     assert P.configured() == "" and asyncio.run(P.call("x")) == ""
+
+
+def test_answering_in_the_app_stops_the_ntfy_alarm(monkeypatch):
+    import iriis.server.phone as P
+    monkeypatch.setenv("NTFY_TOPIC", "iriis-secret-topic")
+    hits = []
+
+    class C:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def put(self, url):
+            hits.append(("PUT", url))
+            return SimpleNamespace(status_code=200)
+
+        async def delete(self, url):
+            hits.append(("DELETE", url))
+            return SimpleNamespace(status_code=200)
+    monkeypatch.setattr(P.httpx, "AsyncClient", C)
+    assert asyncio.run(P.stop(12)) is True
+    assert hits == [("PUT", "https://ntfy.sh/iriis-secret-topic/iriis-call-12/clear"),
+                    ("DELETE", "https://ntfy.sh/iriis-secret-topic/iriis-call-12")]
