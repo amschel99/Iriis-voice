@@ -486,7 +486,7 @@ _GEMINI_CACHE: dict[str, Any] = {}
 def _gemini_models(base: str, key: str) -> list[str]:
     """GEMINI_VISION_MODEL (default gemini-flash-latest) first, then up to 3 current Flash models this key can use,
     found from the model list once an hour; models that answered 404 (retired) are left out."""
-    first = os.environ.get("GEMINI_VISION_MODEL", "gemini-flash-latest")
+    first = os.environ.get("GEMINI_VISION_MODEL", "gemini-flash-lite-latest")
     if time.time() - _GEMINI_CACHE.get("at", 0) > 3600:
         found = []
         try:
@@ -523,7 +523,7 @@ def vision_describe(images: list[bytes], question: str, max_tokens: int = 700) -
             for b in images[:limit]]
         try:
             for attempt in range(3):
-                r = httpx.post(f"{base}/chat/completions", timeout=90, headers={"Authorization": f"Bearer {key}"},
+                r = httpx.post(f"{base}/chat/completions", timeout=25, headers={"Authorization": f"Bearer {key}"},
                                json={"model": model, "max_tokens": max_tokens, "temperature": 0.2,
                                      "messages": [{"role": "user", "content": parts}]})
                 if r.status_code == 404 and "gemini" in model:
