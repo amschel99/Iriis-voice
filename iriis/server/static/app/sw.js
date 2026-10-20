@@ -1,6 +1,6 @@
 // Iriis service worker: makes the app installable, keeps the shell for offline starts, shows push notifications
 // (including incoming calls from Iriis: they vibrate and stay until answered or declined).
-const CACHE = "iriis-v3";
+const CACHE = "iriis-v4";
 const SHELL = ["/app", "/app/manifest.webmanifest", "/app/icon.svg", "/app/icon-192.png"];
 
 self.addEventListener("install", (e) => {

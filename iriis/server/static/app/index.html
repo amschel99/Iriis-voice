@@ -1325,20 +1325,28 @@ function sendVoiceNote(blob) {
 // hold the mic to record a voice message (slide left to cancel), like WhatsApp
 const fab = $("fab"); let rec = null, recChunks = [], recStart = 0, recTimer = null, startX = 0, cancelled = false;
 function syncFab() { const has = box.value.trim().length > 0; $("fabicon").innerHTML = `<use href="#i-${has ? "send" : "mic"}"/>`; fab.setAttribute("aria-label", has ? "Send" : "Hold to record a voice message"); $("cambtn2").hidden = has; }
+let recStarting = false;
 fab.addEventListener("pointerdown", async (e) => {
   if (box.value.trim()) return;                      // a tap on Send is handled on click
-  e.preventDefault(); unlockAudio();
-  try { await getMic(); } catch (err) { toast("Allow the microphone to send voice messages"); return; }
-  const type = recType(); recChunks = []; cancelled = false; startX = e.clientX;
-  try { rec = new MediaRecorder(mic, type ? { mimeType: type } : undefined); } catch (err) { toast("This browser can't record audio"); return; }
-  rec.ondataavailable = (ev) => ev.data.size && recChunks.push(ev.data);
-  rec.onstop = () => {
-    const dur = performance.now() - recStart, blob = new Blob(recChunks, { type: rec.mimeType || "audio/webm" }); rec = null;
+  e.preventDefault();
+  // one recording at a time: a second pointerdown while the mic opens (double touch events on some phones) used to
+  // start a second recorder sharing the chunk list, so the file reached the server without its WebM header
+  if (recStarting || (rec && rec.state === "recording")) return;
+  recStarting = true; unlockAudio();
+  try { await getMic(); } catch (err) { recStarting = false; toast("Allow the microphone to send voice messages"); return; }
+  const type = recType(), chunks = []; cancelled = false; startX = e.clientX;
+  let r;
+  try { r = new MediaRecorder(mic, type ? { mimeType: type } : undefined); } catch (err) { recStarting = false; toast("This browser can't record audio"); return; }
+  rec = r; recChunks = chunks;
+  r.ondataavailable = (ev) => ev.data.size && chunks.push(ev.data);   // this recording's own chunks only
+  r.onstop = () => {
+    const dur = performance.now() - recStart, blob = new Blob(chunks, { type: r.mimeType || "audio/webm" });
+    if (rec === r) rec = null;
     if (cancelled) { toast("Voice message cancelled"); return; }
     if (dur < 700) { toast("Hold the mic to record, release to send"); return; }
     sendVoiceNote(blob);
   };
-  rec.start(250); recStart = performance.now(); voice.stop(); vibrate(20);
+  r.start(250); recStart = performance.now(); recStarting = false; voice.stop(); vibrate(20);
   fab.classList.add("rec"); $("pill").style.display = "none"; $("recbar").style.display = "flex";
   try { fab.setPointerCapture(e.pointerId); } catch (x) {}
   recTimer = setInterval(() => { $("rectime").textContent = fmtDur(Math.floor((performance.now() - recStart) / 1000)); }, 250);
