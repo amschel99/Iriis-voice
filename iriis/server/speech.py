@@ -26,7 +26,7 @@ def wav_bytes(audio: np.ndarray, sr: int) -> bytes:
     return buf.getvalue()
 
 
-def decode_audio_file(data: bytes) -> np.ndarray:
+def decode_audio_file(data: bytes, name: str = "", mime: str = "") -> np.ndarray:
     """Any recording -> 16 kHz mono float32. WAV/FLAC via soundfile; what phones and browsers actually send
     (WebM/Opus from Chrome and Android, MP4/AAC from iPhone Safari, Ogg from Firefox and Telegram) via PyAV."""
     from iriis.audio.playback import resample
@@ -38,7 +38,15 @@ def decode_audio_file(data: bytes) -> np.ndarray:
         pass
     import av
     chunks = []
-    with av.open(io.BytesIO(data), mode="r") as c:
+    hint = next((f for k, f in (("webm", "webm"), ("ogg", "ogg"), ("mp4", "mp4"), ("m4a", "mp4"), ("aac", "aac"),
+                                ("mpeg", "mp3"), ("mp3", "mp3"), ("wav", "wav")) if k in f"{mime} {name}".lower()), None)
+    try:
+        c = av.open(io.BytesIO(data), mode="r")
+    except Exception:  # noqa: BLE001  (some phone recordings need the container named explicitly)
+        if not hint:
+            raise
+        c = av.open(io.BytesIO(data), mode="r", format=hint)
+    with c:
         stream = next((s for s in c.streams if s.type == "audio"), None)
         if stream is None:
             raise ValueError("no audio in that recording")

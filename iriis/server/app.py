@@ -34,6 +34,15 @@ from iriis.storage import get_db
 
 log = logging.getLogger("iriis.server")
 _BACKGROUND: set = set()     # chat turns still running after their app closed
+ERRORS: "deque[dict]" = __import__("collections").deque(maxlen=60)   # recent server errors (GET /v1/debug/errors)
+
+
+def record_error(where: str, err: BaseException | str, **info) -> None:
+    import traceback
+    tb = "".join(traceback.format_exception(err))[-1800:] if isinstance(err, BaseException) else ""
+    ERRORS.append({"ts": time.time(), "where": where, "error": f"{err.__class__.__name__}: {err}"[:500]
+                   if isinstance(err, BaseException) else str(err)[:500], "info": info, "trace": tb})
+    log.warning("error in %s: %s %s", where, err, info)
 STATIC = Path(__file__).parent / "static"
 
 
@@ -329,6 +338,17 @@ def create_app(cfg: Config | None = None) -> FastAPI:
     app = FastAPI(title="Iriis", version="0.2.0", lifespan=lifespan,
                   description="Personal voice assistant API. See /llms.txt for a compact guide.")
 
+    @app.middleware("http")
+    async def keep_errors(request: Request, call_next):
+        try:
+            resp = await call_next(request)
+        except Exception as e:
+            record_error(f"{request.method} {request.url.path}", e)
+            raise
+        if resp.status_code >= 500:
+            record_error(f"{request.method} {request.url.path}", f"HTTP {resp.status_code}")
+        return resp
+
     # ------------------------------------------------------------------ public
 
     @app.get("/health")
@@ -529,9 +549,27 @@ def create_app(cfg: Config | None = None) -> FastAPI:
 
     @app.post("/v1/stt", dependencies=[Depends(require_key)])
     async def stt(request: Request, file: UploadFile = File(...)):
-        audio = decode_audio_file(await file.read())
-        tr = await request.app.state.core.speech.transcribe(audio)
+        data = await file.read()
+        info = {"name": file.filename, "type": file.content_type, "bytes": len(data), "head": data[:12].hex()}
+        if len(data) < 200:
+            record_error("stt", "recording too short or empty", **info)
+            raise HTTPException(422, "The recording was empty. Hold the mic a little longer.")
+        try:
+            audio = await asyncio.to_thread(decode_audio_file, data, file.filename or "", file.content_type or "")
+        except Exception as e:  # noqa: BLE001
+            record_error("stt decode", e, **info)
+            raise HTTPException(422, f"I couldn't read that recording ({e.__class__.__name__}).") from e
+        try:
+            tr = await request.app.state.core.speech.transcribe(audio)
+        except Exception as e:  # noqa: BLE001
+            record_error("stt transcribe", e, **info, seconds=round(len(audio) / 16000, 1))
+            raise HTTPException(503, "Speech recognition failed on the server; try again.") from e
         return {"text": tr.text, "duration_s": round(tr.duration_s, 2), "elapsed_ms": round(tr.elapsed_s * 1000)}
+
+    @app.get("/v1/debug/errors", dependencies=[Depends(require_key)])
+    async def debug_errors(limit: int = 20):
+        """Recent server errors, newest first (what failed, why, and details such as the recording's format)."""
+        return list(reversed(list(ERRORS)))[: max(1, min(limit, 60))]
 
     # ------------------------------------------------------------------ WebSockets
 

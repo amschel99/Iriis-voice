@@ -22,6 +22,7 @@ import time
 from pathlib import Path
 
 import httpx
+from typing import Any
 
 from servers._common import make_server
 from iriis.storage import get_db
@@ -479,19 +480,44 @@ def camera_photo(filename: str = "") -> str:
     return _ready(store(name, r.content, "image/jpeg"), name, len(r.content), "Photo")
 
 
+_GEMINI_CACHE: dict[str, Any] = {}
+
+
+def _gemini_models(base: str, key: str) -> list[str]:
+    """GEMINI_VISION_MODEL (default gemini-flash-latest) first, then up to 3 current Flash models this key can use,
+    found from the model list once an hour; models that answered 404 (retired) are left out."""
+    first = os.environ.get("GEMINI_VISION_MODEL", "gemini-flash-latest")
+    if time.time() - _GEMINI_CACHE.get("at", 0) > 3600:
+        found = []
+        try:
+            r = httpx.get(f"{base}/models", headers={"Authorization": f"Bearer {key}"}, timeout=12)
+            ids = [str(m.get("id", "")).removeprefix("models/") for m in r.json().get("data", [])] if r.status_code == 200 else []
+            skip = ("tts", "image", "live", "embed", "audio", "native", "thinking", "exp", "learnlm", "gemma")
+            flash = [m for m in ids if "flash" in m and not any(k in m for k in skip)]
+            num = lambda m: float((re.findall(r"(\d+(?:\.\d+)?)", m) or ["0"])[0])  # noqa: E731
+            found = sorted(flash, key=lambda m: (-num(m), "lite" in m, "preview" in m, len(m)))[:3]
+        except Exception:  # noqa: BLE001
+            pass
+        _GEMINI_CACHE.update(at=time.time(), found=found)
+    dead = _GEMINI_CACHE.setdefault("dead", set())
+    return [m for m in dict.fromkeys([first, *_GEMINI_CACHE.get("found", [])]) if m not in dead]
+
+
 def vision_describe(images: list[bytes], question: str, max_tokens: int = 700) -> str:
     """Ask a vision model about pictures: Gemini (free tier) first, then Groq. Both are OpenAI-compatible."""
     providers = []
     if os.environ.get("GEMINI_API_KEY"):
-        providers.append(("https://generativelanguage.googleapis.com/v1beta/openai", "".join(os.environ["GEMINI_API_KEY"].split()),
-                          os.environ.get("GEMINI_VISION_MODEL", "gemini-2.5-flash"), 8))
+        gbase, gkey = "https://generativelanguage.googleapis.com/v1beta/openai", "".join(os.environ["GEMINI_API_KEY"].split())
+        for model in _gemini_models(gbase, gkey):      # current Flash models (names retire; overloaded ones vary)
+            providers.append((gbase, gkey, model, 8))
     if os.environ.get("GROQ_API_KEY"):
         providers.append(("https://api.groq.com/openai/v1", "".join(os.environ["GROQ_API_KEY"].split()),
                           os.environ.get("GROQ_VISION_MODEL", "qwen/qwen3.8-27b"), 3))
     if not providers:
         raise ValueError("No vision model is configured (GEMINI_API_KEY or GROQ_API_KEY).")
     errors = []
-    for base, key, model, limit in providers:
+    for i, (base, key, model, limit) in enumerate(providers):
+        last = i == len(providers) - 1
         parts = [{"type": "text", "text": question}] + [
             {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(_jpeg(b)).decode()}}
             for b in images[:limit]]
@@ -500,7 +526,10 @@ def vision_describe(images: list[bytes], question: str, max_tokens: int = 700) -
                 r = httpx.post(f"{base}/chat/completions", timeout=90, headers={"Authorization": f"Bearer {key}"},
                                json={"model": model, "max_tokens": max_tokens, "temperature": 0.2,
                                      "messages": [{"role": "user", "content": parts}]})
-                if r.status_code not in (429, 503) or attempt == 2:
+                if r.status_code == 404 and "gemini" in model:
+                    _GEMINI_CACHE.setdefault("dead", set()).add(model)     # retired: never again
+                # busy or overloaded: move straight on to the next model; only the last one waits and retries
+                if r.status_code not in (429, 503) or attempt == 2 or not last:
                     break
                 try:                                    # busy: wait as asked (capped), then try again
                     wait = min(float(r.headers.get("retry-after", "") or 6 * (attempt + 1)), 20)

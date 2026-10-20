@@ -222,3 +222,13 @@ def test_bench_proxy_routes(monkeypatch, tmp_path):
     assert [u for _, u, _ in seen] == ["https://bench.example/media/12", "https://bench.example/api/media/12/analyze",
                                        "https://bench.example/api/procedures"]
     assert all(a == "Bearer vk" for _, _, a in seen)
+
+
+def test_bad_recording_is_explained_and_logged(monkeypatch, tmp_path):
+    client, _ = make_client(monkeypatch, [], tmp_path)
+    with client:
+        r = client.post("/v1/stt", headers=AUTH, files={"file": ("voice.webm", b"\x1aE\xdf\xa3" + b"\x00" * 600, "audio/webm")})
+        assert r.status_code == 422 and "couldn't read that recording" in r.json()["detail"]
+        assert client.post("/v1/stt", headers=AUTH, files={"file": ("v.webm", b"x", "audio/webm")}).status_code == 422
+        errs = client.get("/v1/debug/errors", headers=AUTH).json()
+        assert errs[0]["where"] == "stt" and errs[1]["where"] == "stt decode" and errs[1]["info"]["type"] == "audio/webm"
