@@ -1,0 +1,22 @@
+# The Complete Family Office Handbook (Kirby Rosplock, 2014) as a 15-day course: Day N is Chapter N,
+# lesson 2N-1 at 10 am and lesson 2N at 10 pm (Nairobi time). Starts by itself on the first deploy.
+title: Family Office course
+book: Family_Office_Handbook          # matched against the uploaded file's name (the full book, for questions)
+times: ["10:00", "22:00"]
+autostart: true
+chapters:
+  1: Introduction to the Family Office
+  2: "Inception of the Family Office: Pathways to a Family Office"
+  3: "Family Wealth Needs: Determining Your Family Office Solution and Services"
+  4: Family Values, Mission, and Vision and the Family Office
+  5: Establishing and Structuring of Family Offices
+  6: "Advising Families: Developing a Family Office Baseline"
+  7: Legal and Compliance Standards and Practices for Family Offices
+  8: Investment Management and the Family Office
+  9: Operations and Information Technology in the Family Office
+  10: Talent Management in the Family Office
+  11: Governance Issues for the Family Office
+  12: "Preparing Succeeding Generations: Family Education in the Family Office"
+  13: Family Entrepreneurship and the Family Bank
+  14: Legacy and Philanthropy in the Family Office
+  15: "Globalization of the Family Office: International Families and Family Offices"

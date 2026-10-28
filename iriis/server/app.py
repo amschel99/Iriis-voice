@@ -324,10 +324,12 @@ def create_app(cfg: Config | None = None) -> FastAPI:
         flusher = asyncio.create_task(core.conversations.run_flusher(cfg.memory.flush_interval_s))
         from iriis.agent.tasks import TaskRunner
         from iriis.agent.mind import run_calls
+        from iriis.agent.course import run_courses
         background = [asyncio.create_task(TaskRunner(core.run_task, core.notify, core.db, judge=core.task_unfinished,
                                                 learn=core.mind.learn_from_task).run()),
                       asyncio.create_task(core.telegram.run()),
-                      asyncio.create_task(run_calls(core))]          # rings the alarms and calls the user set
+                      asyncio.create_task(run_calls(core)),          # rings the alarms and calls the user set
+                      asyncio.create_task(run_courses(core))]        # texts the course lessons at their times
         if not os.environ.get("IRIIS_NO_MIND"):
             # her own thinking between conversations; she only ever reaches the user (the owner approved this)
             background.append(asyncio.create_task(core.mind.run()))

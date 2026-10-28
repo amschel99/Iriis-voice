@@ -200,6 +200,13 @@ class Agent:
         text = await self.llm.complete([{"role": "user", "content": prompt}])
         return [t.strip() for t in re.split(r"[,\s]+", text) if t.strip()]
 
+    def _replying_to(self) -> str:
+        """The start of her last message, when the user is answering something she sent first (a lesson's
+        questions, a reminder): it decides the tools and skills too, as the user's reply alone may not."""
+        last = next((m for m in reversed(self.history.messages) if m.get("role") in ("user", "assistant")), None)
+        c = last.get("content") if last and last.get("role") == "assistant" else ""
+        return c[:200] if isinstance(c, str) else ""
+
     async def _select_tools(self, query: str) -> list[dict[str, Any]]:
         if not self.tools:
             self.tools_note = ""
@@ -356,9 +363,10 @@ class Agent:
             return result
 
         self._query = user_text
-        tools = await self._select_tools(user_text)
+        about = " ".join(filter(None, [user_text, self._replying_to()]))
+        tools = await self._select_tools(about)
         known = {t["function"]["name"] for t in tools}
-        self._skills = self.skills.match(user_text) if self.skills else []
+        self._skills = self.skills.match(about) if self.skills else []
         for sk in self._skills:           # a loaded skill brings the tools it needs
             self._add_server_tools(sk.servers, tools, known)
         if self.skills and self.skills.skills:
