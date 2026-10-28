@@ -29,10 +29,13 @@ TASK_BRIEF = (
     "key details with where each came from (site names), then anything still needing the user. This report may be "
     "longer than a spoken reply; plain text, short paragraphs, no tables. End with one last line: 'STATUS: done' if "
     "the task is finished, or 'STATUS: continue' if you ran out of steps or time and should keep going in another "
-    "session (then the report is your progress notes: what you've done and exactly what's left).]\n\nTask: {goal}"
+    "session (then the report is your progress notes in the long-task-planning layout: goal, phases marked "
+    "[complete]/[in progress]/[pending], findings with sources, errors with what you tried, and the next step).]"
+    "\n\nTask: {goal}"
 )
 CONTINUE = ("\n\n[You already worked on this in an earlier session. Your progress notes:\n{notes}\n"
-            "Pick up exactly where you left off; don't redo what's done.]")
+            "Reread them first, pick up exactly at 'Next step', don't redo finished phases, and never repeat an "
+            "action listed under errors: try something different.]")
 MAX_SESSIONS = 6      # a one-off task may continue over this many sessions before it reports what it has
 
 

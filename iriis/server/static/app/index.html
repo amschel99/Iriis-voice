@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
-<meta name="theme-color" content="#008069" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#202c33" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#0a2420" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b1d1a" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Iriis">
@@ -14,6 +14,9 @@
 <link rel="icon" href="/app/icon.svg" type="image/svg+xml">
 <link rel="icon" href="/app/favicon.ico" sizes="any">
 <link rel="apple-touch-icon" href="/app/icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
 <title>Iriis</title>
 <style>
   /* WhatsApp-like palette (light / dark) */
@@ -395,6 +398,119 @@
 
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; }
+  }
+</style>
+<style id="look">
+  /* Iriis look: "bioluminescent ink". Same WhatsApp layout and behaviour; her own identity on top.
+     Deep forest-ink chrome with grain, jade light from her icon, warm amber for her presence (thinking, calls),
+     ivory paper by day and deep ink by night. Motion: custom ease-out, under 300 ms, press feedback everywhere,
+     hover only on real pointers, reduced motion respected. */
+  :root {
+    --ink:#0a2420; --ink2:#061714; --jade:#19b88a; --jade-hi:#3ee6b0; --amber:#f2a93b; --ease:cubic-bezier(.23,1,.32,1);
+    --ease-io:cubic-bezier(.77,0,.175,1); --drawer:cubic-bezier(.32,.72,0,1);
+    --bar:var(--ink); --bar-text:#eaf6f1; --bg:#f3efe6; --wall:rgba(10,36,32,.045); --in:#fffdf8; --out:#d6f5e6; --text:#13211d;
+    --meta:#6b7a74; --tick:#10a37f; --chip:#fffdf8; --chip-text:#4d5e57; --panel:#fffdf8; --panel2:#f1ede3; --line:#e6e0d3;
+    --accent:var(--jade); --accent-text:#fff; --danger:#e5484d; --input:#fffdf8; --link:#0f7b63; --qbar:var(--jade);
+    --shadow:0 1px 0 rgba(10,36,32,.06), 0 1px 2px rgba(10,36,32,.08); --sel:rgba(25,184,138,.14);
+    --sheet-shadow:0 18px 50px -12px rgba(6,23,20,.35), 0 2px 8px rgba(6,23,20,.08);
+    --font:"Instrument Sans", ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+    --display:"Bricolage Grotesque", "Instrument Sans", ui-sans-serif, sans-serif;
+    --mono:"JetBrains Mono", ui-monospace, Consolas, monospace;
+    --grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bar:#0b1d1a; --bar-text:#e6f2ee; --bg:#06100e; --wall:rgba(62,230,176,.035); --in:#12221f; --out:#0d4a3b; --text:#e4efeb;
+    --meta:#87a29a; --chip:#0f1d1a; --chip-text:#93ada5; --panel:#0b1715; --panel2:#132522; --line:#1b2e2a; --input:#122320;
+    --link:#5fe0b8; --tick:#3ee6b0; --sel:rgba(62,230,176,.16); --shadow:0 1px 0 rgba(0,0,0,.35);
+    --sheet-shadow:0 24px 60px -10px rgba(0,0,0,.75); } }
+  :root[data-theme="dark"] {
+    --bar:#0b1d1a; --bar-text:#e6f2ee; --bg:#06100e; --wall:rgba(62,230,176,.035); --in:#12221f; --out:#0d4a3b; --text:#e4efeb;
+    --meta:#87a29a; --chip:#0f1d1a; --chip-text:#93ada5; --panel:#0b1715; --panel2:#132522; --line:#1b2e2a; --input:#122320;
+    --link:#5fe0b8; --tick:#3ee6b0; --sel:rgba(62,230,176,.16); --shadow:0 1px 0 rgba(0,0,0,.35);
+    --sheet-shadow:0 24px 60px -10px rgba(0,0,0,.75); }
+
+  html, body { font-family:var(--font); font-size:15.5px; letter-spacing:-.003em; -webkit-font-smoothing:antialiased; }
+  .txt code, .txt code.blk { font-family:var(--mono); font-size:13px; }
+  .meta, .vdur, .tm, .recbar .tm { font-variant-numeric:tabular-nums; }
+
+  /* header: ink with a faint jade glow and grain */
+  .bar { background:
+           radial-gradient(120% 140% at 0% 0%, rgba(62,230,176,.16), transparent 55%),
+           linear-gradient(180deg, var(--bar), color-mix(in oklab, var(--bar) 82%, #000));
+         position:relative; isolation:isolate; box-shadow:0 1px 0 rgba(255,255,255,.04) inset, 0 6px 18px -12px rgba(0,0,0,.6); }
+  .bar::after { content:""; position:absolute; inset:0; background:var(--grain); opacity:.18; mix-blend-mode:overlay; pointer-events:none; z-index:-1; }
+  .who b { font-family:var(--display); font-weight:600; font-size:18px; letter-spacing:-.01em; }
+  .who small { opacity:.72; letter-spacing:.005em; }
+  .ava { box-shadow:0 0 0 1.5px rgba(62,230,176,.35), 0 0 18px -4px rgba(62,230,176,.55); }
+  #status { transition:opacity .2s ease, color .2s ease; }
+
+  /* wallpaper: paper with grain and a soft dot lattice */
+  #chat { background-image:radial-gradient(var(--wall) 1.1px, transparent 1.3px), var(--grain);
+          background-size:22px 22px, 160px 160px; background-blend-mode:normal, soft-light; }
+  .day { font-family:var(--display); font-weight:500; text-transform:none; letter-spacing:.01em; font-size:12.5px; border-radius:999px; padding:5px 14px;
+         background:color-mix(in oklab, var(--chip) 88%, transparent); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
+
+  /* bubbles */
+  .b { border-radius:14px; padding:7px 10px 8px; }
+  .row.first:not(.me) .b { border-top-left-radius:4px; } .row.first.me .b { border-top-right-radius:4px; }
+  .row.first:not(.me) .b::before, .row.first.me .b::before { display:none; }
+  .row.me .b { background:linear-gradient(180deg, color-mix(in oklab, var(--out) 92%, #fff), var(--out)); }
+  .row.new { animation:rin 240ms var(--ease); }
+  @keyframes rin { from { opacity:0; transform:translateY(8px) scale(.985) } }
+  .qt { border-left-width:3px; border-radius:8px; }
+  .btns button { border-radius:12px; font-weight:600; transition:transform 140ms var(--ease), background-color .15s ease; }
+  .btns button:active { transform:scale(.97); }
+  .typing i { background:var(--amber); }
+
+  /* composer: floating glass pill, jade send button with light */
+  .pill { border-radius:26px; box-shadow:0 1px 0 rgba(255,255,255,.5) inset, 0 6px 20px -10px rgba(6,23,20,.35), var(--shadow);
+          transition:box-shadow .2s ease; }
+  .pill:focus-within { box-shadow:0 0 0 2px color-mix(in oklab, var(--jade) 45%, transparent), 0 8px 24px -10px rgba(6,23,20,.4); }
+  .fab { background:radial-gradient(120% 120% at 30% 20%, var(--jade-hi), var(--jade) 55%, #0f8a68);
+         box-shadow:0 6px 18px -6px rgba(25,184,138,.75), 0 1px 0 rgba(255,255,255,.35) inset; transition:transform 140ms var(--ease), box-shadow .2s ease; }
+  .fab:active { transform:scale(.94); box-shadow:0 2px 8px -4px rgba(25,184,138,.75); }
+  .fab.rec { background:radial-gradient(120% 120% at 30% 20%, #ff7a7f, var(--danger)); box-shadow:0 0 0 6px rgba(229,72,77,.18), 0 6px 18px -6px rgba(229,72,77,.7); }
+  .ib, .fab, .ac, .smallbtn, .pillbtn { transition:transform 140ms var(--ease), background-color .15s ease; }
+  .ib:active, .smallbtn:active, .pillbtn:active { transform:scale(.95); }
+  .ib:hover { background:transparent; }
+  @media (hover:hover) and (pointer:fine) { .ib:hover { background:rgba(127,127,127,.12); } .menu button:hover, .dlgb button:hover { background:var(--panel2); } }
+  .pillbtn { background:linear-gradient(180deg, var(--jade-hi), var(--jade)); color:#052a20; font-weight:600; border-radius:999px;
+             box-shadow:0 6px 16px -8px rgba(25,184,138,.8); }
+
+  /* sheets, menus, dialogs, toasts: origin-aware, drawer curve, soft depth */
+  .scrim { background:rgba(4,14,12,.42); backdrop-filter:blur(2px); -webkit-backdrop-filter:blur(2px); transition:opacity 220ms ease; }
+  .sheet { border-radius:22px 22px 0 0; box-shadow:var(--sheet-shadow); transition:transform 320ms var(--drawer) !important; }
+  .sheet h4, .dlgc h4 { font-family:var(--display); font-weight:600; letter-spacing:-.01em; }
+  .attach { border-radius:20px; box-shadow:var(--sheet-shadow); transform-origin:12% 100%; transition:transform 220ms var(--ease), opacity 180ms ease !important; }
+  .attach .ac { box-shadow:0 6px 14px -6px var(--c), 0 1px 0 rgba(255,255,255,.3) inset; }
+  .menu { border-radius:14px; box-shadow:var(--sheet-shadow); transform-origin:top right; border:1px solid var(--line);
+          transition:transform 180ms var(--ease), opacity 150ms ease !important; }
+  .dlgc { border-radius:20px; box-shadow:var(--sheet-shadow); }
+  .toast { background:color-mix(in oklab, var(--ink) 92%, transparent); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+           border:1px solid rgba(62,230,176,.18); font-weight:500; transition:transform 260ms var(--ease), opacity 200ms ease; }
+  .page { transition:transform 300ms var(--drawer) !important; }
+  .page .bar .who b { font-size:19px; }
+  .sect { font-family:var(--display); letter-spacing:.02em; }
+  .tag { border-radius:999px; font-weight:600; letter-spacing:.01em; }
+
+  /* calls: a deep ink stage, amber when she speaks */
+  .call, .inc { background:
+      radial-gradient(80% 55% at 50% 30%, rgba(62,230,176,.22), transparent 70%),
+      radial-gradient(60% 40% at 50% 100%, rgba(242,169,59,.10), transparent 70%),
+      linear-gradient(180deg, #0a2420, #040d0b) !important; }
+  .call .top b, .inc .name { font-family:var(--display); font-weight:600; letter-spacing:-.015em; }
+  .call .ring, .inc .ring { border-color:rgba(62,230,176,.5); }
+  .call.speaking .ring { border-color:rgba(242,169,59,.6); }
+  .call .ctl { background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.08); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); }
+  .call .ctl .c { transition:transform 140ms var(--ease), background-color .15s ease; } .call .ctl .c:active { transform:scale(.93); }
+  .inc .ans .ci { background:radial-gradient(120% 120% at 30% 20%, var(--jade-hi), var(--jade)); box-shadow:0 0 0 8px rgba(62,230,176,.14), 0 10px 26px -8px rgba(25,184,138,.8); }
+
+  ::selection { background:color-mix(in oklab, var(--jade) 30%, transparent); }
+  :focus-visible { outline:2px solid var(--jade); outline-offset:2px; border-radius:8px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration:1ms !important; animation-iteration-count:1 !important; scroll-behavior:auto !important; }
+    .sheet, .page, .attach, .menu, .toast { transition:opacity 150ms ease !important; }
   }
 </style>
 </head>

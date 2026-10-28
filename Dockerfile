@@ -31,6 +31,7 @@ COPY --from=models /build/models ./models
 COPY iriis ./iriis
 COPY servers ./servers
 COPY config ./config
+COPY skills ./skills
 # The rest of the project, so Iriis can read how she works (servers/self_knowledge.py).
 COPY README.md pyproject.toml requirements.txt requirements-server.txt ./
 COPY scripts ./scripts

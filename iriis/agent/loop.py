@@ -12,6 +12,7 @@ from typing import Any, Awaitable, Callable, Protocol
 from iriis.agent.conversations import OWNER_SESSION, SUMMARY_PROMPT, ConversationStore, format_dialogue
 from iriis.agent.memory import ConversationHistory
 from iriis.agent.permissions import STICKY, STICKY_S, AuditLog, PermissionManager, describe_call, is_affirmative, redact_secrets
+from iriis.agent.skills import USE_SKILL_NAME, library as skill_library
 from iriis.agent.tool_router import ToolRouter
 from iriis.config import Config
 from iriis.llm.base import LLMClient, ToolCall
@@ -110,6 +111,7 @@ class Agent:
         self.router = ToolRouter(cfg.tool_routing.max_tools, cfg.tool_routing.method)
         self.history = ConversationHistory(cfg.llm.history_max_tokens)
         self.memory_facts = memory_facts or (lambda: [])
+        self.skills = skill_library()     # skills/: know-how loaded into the prompt when a request needs it
         self.mind = None          # iriis.agent.mind.Mind: her own memory, lessons, goals and mood (set by the core)
         # Persistent conversation: reload recent context (survives restarts and redeploys).
         self.store = store
@@ -138,7 +140,9 @@ class Agent:
             casting=self.cfg.tts.casting(), voice_style=self._voice_style())
         note = getattr(self, "tools_note", "")
         mind = self.mind.context(getattr(self, "_query", "")) if self.mind else ""
-        return {"role": "system", "content": prompt + ("\n\n" + mind if mind else "") + ("\n\n" + note if note else "")}
+        skills = self.skills.prompt(getattr(self, "_skills", [])) if self.skills else ""
+        return {"role": "system", "content": prompt + ("\n\n" + mind if mind else "") +
+                ("\n\n" + skills if skills else "") + ("\n\n" + note if note else "")}
 
     def _voice_style(self) -> str:
         """Which tag syntax she should write: only what the voice engine in use can actually perform."""
@@ -230,6 +234,32 @@ class Agent:
             return (f"No more tools match '{need}'. Skills that exist: {have}. If the one you need isn't there (for "
                     "example the computer link is down), tell the user plainly.")
         return "Now available: " + ", ".join(t["function"]["name"] for t in added) + ". Use them."
+
+    def _add_server_tools(self, servers: list[str], tools: list[dict[str, Any]], known: set[str]) -> list[str]:
+        """Add every tool of these servers to this turn's list, ahead of the trailing use_skill / more_tools."""
+        catalog = self.tools.servers_catalog() if self.tools else {}
+        tail = 0
+        while tail < len(tools) and tools[len(tools) - 1 - tail]["function"]["name"] in (USE_SKILL_NAME, MORE_TOOLS_NAME):
+            tail += 1
+        added = []
+        for srv in servers:
+            for t in catalog.get(srv, {}).get("tools", []):
+                fn = t["function"]["name"]
+                if fn not in known:
+                    tools.insert(len(tools) - tail, t)
+                    known.add(fn)
+                    added.append(fn)
+        return added
+
+    def _use_skill(self, name: str, tools: list[dict[str, Any]], known: set[str]) -> str:
+        sk = self.skills.get(name) if self.skills else None
+        if not sk:
+            have = ", ".join(sorted(self.skills.skills)) if self.skills else "none"
+            return f"No skill named '{name}'. Your skills: {have}."
+        added = self._add_server_tools(sk.servers, tools, known)
+        self._skills = [*getattr(self, "_skills", []), sk]
+        extra = f"\n\nTools now available for it: {', '.join(added)}." if added else ""
+        return f"<skill name=\"{sk.name}\">\n{sk.body}\n</skill>\nFollow this skill for the job.{extra}"
 
     async def _execute(self, call: ToolCall, known: set[str], cb: TurnCallbacks) -> str:
         if "_raw" in call.arguments:          # the model ran out of room mid-call: the arguments are cut off
@@ -324,6 +354,11 @@ class Agent:
         self._query = user_text
         tools = await self._select_tools(user_text)
         known = {t["function"]["name"] for t in tools}
+        self._skills = self.skills.match(user_text) if self.skills else []
+        for sk in self._skills:           # a loaded skill brings the tools it needs
+            self._add_server_tools(sk.servers, tools, known)
+        if self.skills and self.skills.skills:
+            tools = [*tools, self.skills.tool()]
         if self.tools and sum(len(s["tools"]) for s in self.tools.servers_catalog().values()) > len(tools):
             tools = [*tools, MORE_TOOLS]      # not every tool fits in one turn: let her fetch what's missing
         seen = await self._open_attachments(user_text, cb)
@@ -461,6 +496,11 @@ class Agent:
             for call in calls:
                 if call.name == MORE_TOOLS_NAME:
                     output = await self._more_tools(str(call.arguments.get("need", "")), tools, known)
+                    turn.append(LLMClient.tool_result_message(call, output))
+                    continue
+                if call.name == USE_SKILL_NAME:
+                    output = self._use_skill(str(call.arguments.get("name", "")), tools, known)
+                    cb.show("tool", f"[skill] {call.arguments.get('name', '')}")
                     turn.append(LLMClient.tool_result_message(call, output))
                     continue
                 output = await self._execute(call, known, cb)

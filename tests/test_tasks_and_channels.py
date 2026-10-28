@@ -168,7 +168,7 @@ def test_unfinished_task_carries_on_from_its_notes(tdb):
         for row in r.due(5):
             await r._work(row)
     asyncio.run(go())
-    assert "Read Orwell and McPhee" in seen[1] and "Pick up exactly where you left off" in seen[1]
+    assert "Read Orwell and McPhee" in seen[1] and "pick up exactly at 'Next step'" in seen[1]
     st, res, runs = tdb.execute("SELECT status, result, runs FROM tasks")[0]
     assert st == "done" and res.startswith("The guide") and "STATUS" not in res and runs == 2
     assert len(told) == 1 and "The guide" in told[0]

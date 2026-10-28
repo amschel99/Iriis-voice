@@ -136,6 +136,17 @@ mcpServers:
     description: Search the web and read web pages as text - news, facts, prices, docs, anything current.
     keywords: [search, google, look, find, web, internet, online, news, latest, today, price, weather, who, what, website, article, read, link, url]
 
+  research:              # AI papers (Hugging Face / arXiv) + last-30-days community talk; free, no key needed
+    command: python
+    args: ["-m", "servers.research"]
+    env: {HF_TOKEN: "${HF_TOKEN}", REDDIT_CLIENT_ID: "${REDDIT_CLIENT_ID}", REDDIT_CLIENT_SECRET: "${REDDIT_CLIENT_SECRET}"}
+    needs_internet: true
+    tier: auto
+    description: Research papers (search, read, trending, code and models for a paper), what people say on Reddit, Hacker News, GitHub and Polymarket in the last 30 days, and source trust ratings.
+    keywords: [paper, papers, arxiv, research, study, studies, state of the art, sota, llm, model, models, technique, benchmark,
+               people, saying, think, opinion, opinions, reddit, hacker news, hn, github, repo, trending, trend, community,
+               polymarket, odds, reaction, reviews, latest, new, last 30 days, this month, sources, credible, trust]
+
   seryn:                 # Seryn Twin on Railway (remote MCP): cited PCM / liner / produce database, models, lab
     # Runs from the cloud core, so it works with your computer off and nothing about Seryn lives on this PC.
     # Set SERYN_API_KEY (one of the twin's SERYN_API_KEYS, or its app password) where Iriis runs.
