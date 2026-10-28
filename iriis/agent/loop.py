@@ -20,6 +20,9 @@ from iriis.llm.prompts import FILLERS, build_system_prompt, wrap_tool_result
 from iriis.llm.sentences import SentenceChunker
 
 MAX_TOOL_RESULT_CHARS = 4000
+# Reading tools return one part of a long document or page (with where to read on); the whole part must arrive.
+READ_TOOLS = ("__inspect_file", "__read_page", "__read_paper", "__read_document")
+MAX_READ_RESULT_CHARS = 16000
 SCREEN_MARKER = re.compile(r"\bSCREEN:\s*", re.I)
 
 RESET_RE = re.compile(r"^\W*(start over|new conversation|reset( the)? conversation|forget (this|our) conversation)\W*$", re.I)
@@ -322,8 +325,9 @@ class Agent:
         self.audit.record(tool=call.name, args=args, tier=decision.tier, confirmed=confirmed, executed=not error,
                           result=result, error=error, duration_ms=duration)
         cb.show("tool", f"<- {call.name} ({duration:.0f} ms): {result[:200]}")
-        if len(result) > MAX_TOOL_RESULT_CHARS:
-            result = result[:MAX_TOOL_RESULT_CHARS] + "\n[truncated]"
+        cap = MAX_READ_RESULT_CHARS if call.name.endswith(READ_TOOLS) else MAX_TOOL_RESULT_CHARS
+        if len(result) > cap:
+            result = result[:cap] + "\n[truncated]"
         return result
 
     # ------------------------------------------------------------------ main entry
@@ -403,11 +407,13 @@ class Agent:
                 out = f"ERROR: {e}"
                 if ERROR_HOOK:
                     ERROR_HOOK("attachment", e, file_id=fid, name=name, mime=mime)
-            notes.append(f"file {fid} ({name}): {str(out)[:6000]}")
+            notes.append(f"file {fid} ({name}): {str(out)[:MAX_READ_RESULT_CHARS]}")
         if not notes:
             return ""
         return ("\n\n[What the attached files contain (you opened them already; answer from this, and say so plainly "
-                "if a file couldn't be read):\n" + "\n".join(notes) + "]")
+                "if a file couldn't be read). A long document shows its beginning and chapter list here: read the rest "
+                "with inspect_file (start, section or find), never tell the user it's too long to read:\n"
+                + "\n".join(notes) + "]")
 
     async def _run(self, turn, tools, known, cb, result, t0) -> TurnResult:
         first_token_seen = False

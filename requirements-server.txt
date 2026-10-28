@@ -7,6 +7,7 @@ python-multipart==0.0.32
 httpx==0.28.1
 ddgs==9.16.0             # web_search (cloud copy, used while the desktop is offline)
 pypdf==6.21.1
+pypdfium2==5.14.0        # fast PDF text + chapter list for long books; renders scanned pages
 pywebpush==2.5.0          # app notifications (Web Push, MPL-2.0)
 # studio (cloud charts, diagrams, documents): all open source
 matplotlib==3.11.2

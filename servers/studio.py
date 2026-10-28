@@ -619,11 +619,14 @@ def _transcribe(name: str, data: bytes, mime: str) -> str:
 
 
 @mcp.tool()
-def inspect_file(file_id: int, question: str = "") -> str:
+def inspect_file(file_id: int, question: str = "", start: int = 0, find: str = "", section: str = "") -> str:
     """Open a file the user sent in the chat (or one you made) and read it: PDFs, Word, Excel, PowerPoint, text,
-    CSV and code are read as text; pictures are looked at by a vision model; audio is transcribed; videos are
-    watched (key frames) and listened to. question: what to look for, e.g. "what's wrong in this wiring?"."""
-    import io
+    Markdown, CSV and code are read as text; pictures are looked at by a vision model; audio is transcribed; videos
+    are watched (key frames) and listened to. question: what to look for, e.g. "what's wrong in this wiring?".
+    Documents of any length (a 4,000-page book too) are read a part at a time: the first look gives the size, the
+    chapters with where each starts, and the opening. Then read on with start (the position the last part ended at),
+    jump to a chapter with section (its title, or part of it), or search the whole document with find (a word or
+    phrase: every place it appears, with its page and position)."""
     name, mime, data = load(file_id)
     low = name.lower()
     q = question.strip() or "Describe this in detail: what it shows, any text, numbers, problems or things worth noting."
@@ -641,36 +644,180 @@ def inspect_file(file_id: int, question: str = "") -> str:
         except Exception:  # noqa: BLE001
             heard = ""
         return f"{name} (video, {dur:.0f} s). What it shows: {seen or '(no frames)'}\nWhat's said: {heard or '(no speech)'}"
-    text = ""
+    doc = _document(int(file_id), name, mime, data)
+    if doc.get("scanned"):
+        return f"{name} (scanned PDF, {doc['pages']} pages, no text layer): " + _pdf_pages_seen(data, q)
+    if not doc["text"].strip():
+        return f"{name}: I couldn't find any text in it."
+    return _read_part(int(file_id), name, doc, max(0, int(start or 0)), (find or "").strip(), (section or "").strip())
+
+
+# ---------------------------------------------------------------------------- reading long documents
+PART_CHARS = 10_000        # one read: about five book pages
+FIRST_CHARS = 6_000        # the first look also carries the chapter list
+EXTRACT_BUDGET_S = 40.0    # one call's share of pulling text out of a huge PDF; the next read carries on
+HEADING = re.compile(r"^[ \t]*(#{1,3}[ \t]+\S.{0,120}|(?:chapter|part|book|section|lesson|unit|module)[ \t]+"
+                     r"(?:\d+|[ivxlc]+|one|two|three|four|five|six|seven|eight|nine|ten)\b.{0,100})[ \t]*$", re.I | re.M)
+PAGE_MARK = re.compile(r"\[page (\d+)\]\n")
+
+
+def _document(fid: int, name: str, mime: str, data: bytes) -> dict:
+    """The file's text, pulled out once and kept (file_text). A long PDF is extracted in slices of EXTRACT_BUDGET_S,
+    so the first read of a 4,000-page book answers within the tool timeout and later reads finish the job."""
+    db = get_db()
+    rows = db.execute("SELECT text, pages, done, outline FROM file_text WHERE file_id = ?", (fid,))
+    if rows:
+        text, pages, done, outline = rows[0]
+        doc = {"text": text, "pages": int(pages), "done": int(done), "outline": json.loads(outline or "[]")}
+        if doc["done"] >= doc["pages"]:
+            return doc
+    else:
+        doc = {"text": "", "pages": 0, "done": 0, "outline": []}
+    low = name.lower()
     if low.endswith(".pdf") or mime == "application/pdf":
+        doc = _pdf_text(data, doc)
+        if doc["done"] >= min(doc["pages"], 30) and len(doc["text"].strip()) < 40 * max(1, doc["done"]):
+            return {**doc, "scanned": True}            # a scan: look at the pages instead
+    else:
+        doc = {"text": _plain_text(low, data).strip(), "pages": 0, "done": 0, "outline": []}
+    if doc["done"] >= doc["pages"] and not doc["outline"]:
+        doc["outline"] = [[t, pos] for t, pos in _headings(doc["text"])]
+    db.execute("INSERT INTO file_text (file_id, text, pages, done, outline, updated) VALUES (?, ?, ?, ?, ?, ?) "
+               "ON CONFLICT (file_id) DO UPDATE SET text = excluded.text, pages = excluded.pages, done = excluded.done, "
+               "outline = excluded.outline, updated = excluded.updated",
+               (fid, doc["text"], doc["pages"], doc["done"], json.dumps(doc["outline"]), time.time()))
+    return doc
+
+
+def _pdf_text(data: bytes, doc: dict) -> dict:
+    """Carry on extracting from page doc['done']; every page starts with a [page N] mark. pdfium is fast (thousands
+    of pages a minute) and reads the PDF's own chapter list; pypdf is the fallback."""
+    import io
+    t0, parts, done = time.monotonic(), [doc["text"]] if doc["text"] else [], doc["done"]
+    outline, first = doc["outline"], doc["done"]     # every read gets at least one page further
+    try:
+        import pypdfium2 as pdfium
+        pdf = pdfium.PdfDocument(data)
+        pages = len(pdf)
+        if done == 0:
+            try:     # chapter pages are kept negative until the text (and so their positions) is complete
+                outline = [[it.title.strip(), -(it.page_index + 1)] for it in pdf.get_toc(max_depth=3)
+                           if it.title and it.title.strip() and it.page_index is not None][:400]
+            except Exception:  # noqa: BLE001
+                outline = []
+        while done < pages and (done == first or time.monotonic() - t0 < EXTRACT_BUDGET_S):
+            text = pdf[done].get_textpage().get_text_bounded() or ""
+            parts.append(f"[page {done + 1}]\n{text.strip()}")
+            done += 1
+    except ImportError:
         from pypdf import PdfReader
         reader = PdfReader(io.BytesIO(data))
-        text = "\n".join(f"[page {i + 1}] {(p.extract_text() or '').strip()}" for i, p in enumerate(reader.pages[:60]))
-        if len(text.strip()) < 40 * max(1, len(reader.pages[:60])):      # a scan: look at the pages instead
-            return f"{name} (scanned PDF, {len(reader.pages)} pages): " + _pdf_pages_seen(data, q)
-    elif low.endswith(".docx"):
+        pages = len(reader.pages)
+        while done < pages and (done == first or time.monotonic() - t0 < EXTRACT_BUDGET_S):
+            parts.append(f"[page {done + 1}]\n{(reader.pages[done].extract_text() or '').strip()}")
+            done += 1
+    text = "\n".join(parts)
+    if done >= pages and outline and outline[0][1] < 0:
+        marks = {int(m.group(1)): m.start() for m in PAGE_MARK.finditer(text)}
+        outline = [[t, marks.get(-p, 0)] for t, p in outline]
+    return {"text": text, "pages": pages, "done": done, "outline": outline}
+
+
+def _plain_text(low: str, data: bytes) -> str:
+    import io
+    if low.endswith(".docx"):
         import docx
         d = docx.Document(io.BytesIO(data))
-        text = "\n".join(p.text for p in d.paragraphs) + "\n" + "\n".join(
+        return "\n".join(p.text for p in d.paragraphs) + "\n" + "\n".join(
             " | ".join(c.text for c in row.cells) for t in d.tables for row in t.rows)
-    elif low.endswith((".xlsx", ".xlsm")):
+    if low.endswith((".xlsx", ".xlsm")):
         import openpyxl
         wb = openpyxl.load_workbook(io.BytesIO(data), data_only=True, read_only=True)
-        for ws in wb.worksheets[:8]:
-            text += f"\n# sheet {ws.title}\n" + "\n".join(
-                ",".join("" if v is None else str(v) for v in row) for row in ws.iter_rows(max_row=300, values_only=True))
-    elif low.endswith(".pptx"):
+        return "".join(f"\n# sheet {ws.title}\n" + "\n".join(",".join("" if v is None else str(v) for v in row)
+                                                           for row in ws.iter_rows(values_only=True))
+                       for ws in wb.worksheets)
+    if low.endswith(".pptx"):
         from pptx import Presentation
         prs = Presentation(io.BytesIO(data))
-        text = "\n".join(f"[slide {i + 1}] " + " / ".join(sh.text_frame.text for sh in s.shapes if sh.has_text_frame)
+        return "\n".join(f"[slide {i + 1}] " + " / ".join(sh.text_frame.text for sh in s.shapes if sh.has_text_frame)
                          for i, s in enumerate(prs.slides))
+    return data.decode("utf-8", errors="replace")
+
+
+def _headings(text: str) -> list[tuple[str, int]]:
+    """Markdown headings and 'Chapter 3 ...' lines, for documents with no chapter list of their own."""
+    return [(re.sub(r"^#+\s*", "", m.group(1)).strip(), m.start()) for m in HEADING.finditer(text)][:400]
+
+
+def _where(text: str, pos: int) -> str:
+    m = None
+    for m in PAGE_MARK.finditer(text, max(0, pos - 12_000), pos + 12):
+        pass
+    return f"p. {m.group(1)}, at {pos:,}" if m else f"at {pos:,}"
+
+
+def _cut(text: str, start: int, size: int) -> int:
+    """End of a part: the last paragraph or sentence break near start + size, never mid-word."""
+    end = min(len(text), start + size)
+    if end >= len(text):
+        return end
+    for sep in ("\n\n", "\n", ". ", " "):
+        i = text.rfind(sep, start + size // 2, end)
+        if i > 0:
+            return i + len(sep)
+    return end
+
+
+def _outline_lines(text: str, outline: list, limit: int) -> str:
+    lines = [f"- {t} ({_where(text, pos)})" for t, pos in outline[:limit]]
+    if len(outline) > limit:
+        lines.append(f"- ... and {len(outline) - limit} more (ask for one with section)")
+    return "\n".join(lines)
+
+
+def _read_part(fid: int, name: str, doc: dict, start: int, find: str, section: str) -> str:
+    text, outline, total = doc["text"], doc["outline"], len(doc["text"])
+    head = f"{name} ({doc['pages']:,} pages, {total:,} characters)" if doc["pages"] else f"{name} ({total:,} characters)"
+    if doc["done"] < doc["pages"]:
+        head += (f". The text of pages 1-{doc['done']:,} is ready; the rest is still being pulled out and arrives as "
+                 "you keep reading")
+    if find:
+        hits = [m.start() for m in re.finditer(re.escape(find), text, re.I)]
+        if not hits:
+            return f"{head}\n\n'{find}' doesn't appear in it. Try another word, or read by chapter with section."
+        lines = [f"{head}\n\n'{find}' appears {len(hits)} time{'s' * (len(hits) != 1)}"
+                 + ("; the first 12:" if len(hits) > 12 else ":")]
+        for pos in hits[:12]:
+            snippet = PAGE_MARK.sub("", text[max(0, pos - 300):pos + 500]).replace("\n", " ").strip()
+            lines.append(f"\n- ({_where(text, pos)}) ...{snippet}...")
+        lines.append(f"\n[Read around any of these with inspect_file(file_id={fid}, start=<position>).]")
+        return "".join(lines)
+    if section:
+        want = section.lower()
+        match = (next((o for o in outline if o[0].lower() == want), None)
+                 or next((o for o in outline if want in o[0].lower()), None))
+        if not match:
+            pos = text.lower().find(want)
+            if pos < 0:
+                return f"{head}\n\nNo chapter called '{section}'. Chapters:\n" + (_outline_lines(text, outline, 80)
+                                                                                 or "(none found; use find)")
+            match = [section, pos]
+        start = match[1]
+    start = min(start, total)
+    first = start == 0 and not section
+    end = _cut(text, start, FIRST_CHARS if first and outline else PART_CHARS)
+    out = [head]
+    if first and outline:
+        out.append(f"Chapters ({len(outline)}):\n" + _outline_lines(text, outline, 60))
+    out.append(f"[{_where(text, start)}]\n{text[start:end]}")
+    if end < total:
+        out.append(f"[Read up to {end:,} of {total:,} characters ({100 * end // max(1, total)}%). Read on with "
+                   f"inspect_file(file_id={fid}, start={end}); jump to a chapter with section, or search with find. "
+                   "Work over the whole document (lessons, notes or a summary of every chapter) is a background task: "
+                   "go chapter by chapter and keep notes as you go.]")
     else:
-        text = data[:400_000].decode("utf-8", errors="replace")
-    text = text.strip()
-    if not text:
-        return f"{name}: I couldn't find any text in it."
-    head = f"{name} ({len(text):,} characters)"
-    return f"{head}:\n{text[:12000]}" + ("\n[the rest is longer; ask about a part]" if len(text) > 12000 else "")
+        out.append("[end of the document]" if end > start else f"[That's past the end: it has {total:,} characters.]")
+    return "\n\n".join(out)
 
 
 def _pdf_pages_seen(data: bytes, q: str) -> str:

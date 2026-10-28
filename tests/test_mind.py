@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json
+import re
 import time
 from types import SimpleNamespace
 
@@ -181,6 +183,51 @@ def test_inspect_file_reads_documents(sdb):
     assert "held 14 hours" in S.inspect_file(1)
     fid = S.store("data.csv", b"day,temp\nmon,12\n")
     assert "mon,12" in S.inspect_file(fid)
+
+
+def test_inspect_file_reads_a_whole_long_book(sdb):
+    """A 600,000-character Markdown book: chapter list, paging to the end, search and jumping to a chapter."""
+    from servers import studio as S
+    chapters = [f"# Chapter {i}: Topic {i}\n\n" + "".join(f"Line {i}.{j} about cold rooms.\n" for j in range(1000))
+                for i in range(1, 21)]
+    chapters[16] = chapters[16].replace("Line 17.500 about cold rooms.", "Line 17.500 about eutectic plates.")
+    book = "Copyright 2026. All rights reserved.\n\n" + "\n".join(chapters)
+    fid = S.store("book.md", book.encode())
+    first = S.inspect_file(fid)
+    assert "Chapters (20)" in first and "Chapter 20: Topic 20" in first and "Copyright" in first
+    seen, start = [], 0
+    while True:                                   # read it all, part by part, like she would
+        part = S.inspect_file(fid, start=start)
+        m = re.search(r"start=(\d+)\)", part)
+        seen.append(part)
+        if not m:
+            break
+        assert int(m.group(1)) > start
+        start = int(m.group(1))
+    assert "Line 20.999" in seen[-1] and "[end of the document]" in seen[-1]
+    hit = S.inspect_file(fid, find="eutectic plates")
+    assert "appears 1 time" in hit and "Line 17.500" in hit
+    sec = S.inspect_file(fid, section="chapter 9")
+    assert sec.split("]\n", 1)[1].startswith("# Chapter 9: Topic 9")
+    assert "past the end" in S.inspect_file(fid, start=10**9)
+
+
+def test_long_pdf_is_extracted_over_several_reads(sdb, monkeypatch):
+    """A PDF too slow to pull out in one call: the first read answers with what's ready, later reads finish it."""
+    from reportlab.pdfgen import canvas
+    from servers import studio as S
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf)
+    for i in range(12):
+        c.drawString(72, 750, f"Page {i + 1} of the manual: defrost every {i + 2} weeks and log it carefully.")
+        c.showPage()
+    c.save()
+    fid = S.store("manual.pdf", buf.getvalue(), "application/pdf")
+    monkeypatch.setattr(S, "EXTRACT_BUDGET_S", 0.0)            # one page per read
+    assert "pages 1-1 is ready" in S.inspect_file(fid)
+    monkeypatch.setattr(S, "EXTRACT_BUDGET_S", 40.0)
+    full = S.inspect_file(fid, find="defrost every 13 weeks")
+    assert "12 pages" in full and "is ready" not in full and "p. 12" in full
 
 
 def test_memory_is_corrected_not_just_appended(tmp_path):

@@ -39,6 +39,10 @@ _TABLES = {
     # Charts, diagrams and documents the cloud studio made (base64), so they can go to Telegram or any computer.
     "files": "id {pk}, name TEXT NOT NULL, mime TEXT NOT NULL, size INTEGER NOT NULL, data TEXT NOT NULL, "
              "created {real} NOT NULL",
+    # The text of a file the user sent, pulled out once (a 4,000-page PDF takes a while) and read a part at a time.
+    # done: PDF pages extracted so far (a long one is finished over several reads); outline: [[title, position], ...].
+    "file_text": "file_id INTEGER PRIMARY KEY, text TEXT NOT NULL, pages INTEGER NOT NULL DEFAULT 0, "
+                 "done INTEGER NOT NULL DEFAULT 0, outline TEXT NOT NULL DEFAULT '[]', updated {real} NOT NULL",
     "transactions": "id {pk}, ts {real} NOT NULL, amount {real} NOT NULL, currency TEXT NOT NULL DEFAULT 'KES', "
                     "kind TEXT NOT NULL DEFAULT 'expense', category TEXT NOT NULL DEFAULT 'other', "
                     "party TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', "
