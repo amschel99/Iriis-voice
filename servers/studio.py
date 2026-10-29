@@ -820,6 +820,27 @@ def _read_part(fid: int, name: str, doc: dict, start: int, find: str, section: s
     return "\n\n".join(out)
 
 
+@mcp.tool()
+def send_to_hq(file_id: int) -> str:
+    """Give Iriis HQ (his chief of staff) one of your files: a document, photo, voice note or video the user sent
+    you, or one you made. HQ reads it (documents go into his library) and returns an upload id. Then ask HQ
+    about it with hq__ask_iriis(message, attachment_ids=[<that id>]), e.g. to file a deck under a venture."""
+    key = os.environ.get("IRIIS_HQ_KEY", "")
+    if not key:
+        raise ValueError("Iriis HQ isn't connected (IRIIS_HQ_KEY is not set).")
+    name, mime, data = load(file_id)
+    base = os.environ.get("IRIIS_HQ_URL", "https://iriis.riftfi.com").rstrip("/")
+    r = httpx.post(f"{base}/api/v1/uploads", timeout=180, headers={"Authorization": f"Bearer {key}"},
+                   files={"file": (name, data, mime)})
+    if r.status_code >= 400:
+        raise ValueError(f"HQ refused the upload ({r.status_code}): {r.text[:300]}")
+    rec = r.json()
+    extra = ", ".join(f"{k} {rec[k]}" for k in ("kind", "pages", "duration") if rec.get(k))
+    return (f"HQ has {name}: upload id {rec.get('id')}" + (f" ({extra})" if extra else "") +
+            (". It's in his HQ library." if rec.get("library_doc") else ".") +
+            f" Ask HQ about it: hq__ask_iriis(message, attachment_ids=[\"{rec.get('id')}\"]).")
+
+
 def _pdf_pages_seen(data: bytes, q: str) -> str:
     try:
         import pypdfium2 as pdfium   # optional

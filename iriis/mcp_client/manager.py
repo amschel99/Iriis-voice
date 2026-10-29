@@ -23,6 +23,38 @@ from iriis.mcp_client.schema_convert import mcp_tool_to_llm, split_name
 log = logging.getLogger("iriis.mcp")
 CONNECT_TIMEOUT_S = 25.0
 CALL_TIMEOUT_S = 60.0
+MAX_KEEP_BYTES = 15 * 1024 * 1024
+
+
+def keep_block(block: Any, stem: str) -> str:
+    """An image, audio clip or file a remote tool returned (HQ's get_file and charts, the bench snapshot), kept as
+    one of her files so it shows in the chat with her reply and can be sent on. Text resources come back as text."""
+    import base64
+    import mimetypes
+    import time
+
+    kind = getattr(block, "type", "content")
+    data, mime, name = None, "", ""
+    if kind in ("image", "audio"):
+        data, mime = getattr(block, "data", None), getattr(block, "mimeType", "") or ""
+    elif kind == "resource":
+        res = getattr(block, "resource", None)
+        if getattr(res, "text", None) is not None:
+            return str(res.text)
+        data, mime = getattr(res, "blob", None), getattr(res, "mimeType", "") or ""
+        name = str(getattr(res, "uri", "") or "").rstrip("/").rsplit("/", 1)[-1]
+    if not data:
+        return f"[{kind} omitted]"
+    raw = base64.b64decode(data)
+    if len(raw) > MAX_KEEP_BYTES:
+        return f"[{kind} of {len(raw) / 1e6:.0f} MB omitted]"
+    mime = mime or mimetypes.guess_type(name)[0] or "application/octet-stream"
+    if not name or "." not in name:
+        name = stem + (mimetypes.guess_extension(mime) or "")
+    from iriis.storage import get_db
+    fid = get_db().insert("INSERT INTO files (name, mime, size, data, created) VALUES (?, ?, ?, ?, ?)",
+                          (name, mime, len(raw), base64.b64encode(raw).decode(), time.time()))
+    return f"{name} ready: file {fid} ({kind} from the tool; it shows in the chat with your reply)"
 
 
 def expand_env(env: dict[str, str]) -> dict[str, str]:
@@ -197,13 +229,18 @@ class MCPManager:
         if not conn or not conn.client:
             raise RuntimeError(f"the {server} tools are not available")
         result = await asyncio.wait_for(conn.client.call_tool(tool, arguments), CALL_TIMEOUT_S + 5)
-        parts = []
-        for block in result.content or []:
+        parts, kept = [], []
+        for i, block in enumerate(result.content or []):
             text = getattr(block, "text", None)
             if text is not None:
                 parts.append(text)
-            else:
-                parts.append(f"[{getattr(block, 'type', 'content')} omitted]")
+                continue
+            try:
+                note = await asyncio.to_thread(keep_block, block, f"{server}-{tool}-{i + 1}")
+            except Exception as e:  # noqa: BLE001
+                note = f"[{getattr(block, 'type', 'content')} could not be kept: {e}]"
+            (kept if " ready: file " in note else parts).append(note)
+        parts = kept + parts       # first, so the reply carries the file (the loop reads the first 300 chars)
         if not parts and result.structured_content is not None:
             parts.append(json.dumps(result.structured_content, default=str))
         text = "\n".join(parts) or "(no output)"

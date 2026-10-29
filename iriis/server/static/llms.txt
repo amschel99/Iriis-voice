@@ -101,6 +101,9 @@ Server -> client:
 ## Connected services
 
 She also reaches Seryn Twin, Seryn Vision and Iriis HQ (the owner's chief of staff, iriis.riftfi.com) with her own keys; integrators don't need those keys to use her.
+With HQ she reads any HQ screen as data (`iriis_view`), hands HQ whole questions, gives HQ her files (they go into
+his HQ library) and brings HQ's charts and files back into her chat. LinkedIn drafts, pausing or waking HQ and
+skill pack changes need the owner's yes; HQ's own texts and calls to him are left to her.
 
 ## Background turns
 

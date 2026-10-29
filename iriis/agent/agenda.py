@@ -33,7 +33,8 @@ log = logging.getLogger("iriis.agenda")
 # files, messaging, money or tasks: nothing that acts on the outside world or in his name.
 WORK_SERVERS = {"web", "research", "seryn", "hq", "studio", "memory", "time_and_calc", "self", "google", "notes_reminders"}
 # HQ's own agent can send email by itself: not while she works alone (she uses HQ's read tools directly instead)
-WORK_BLOCKED = {"hq__ask_iriis", "hq__start_background_research", "hq__schedule_followup"}
+WORK_BLOCKED = {"hq__ask_iriis", "hq__start_background_research", "hq__schedule_followup", "hq__iriis_draft",
+                "hq__iriis_life", "hq__skill_packs", "hq__send_file", "studio__send_to_hq"}
 MAX_WORK_SESSIONS =int(os.environ.get("IRIIS_MAX_WORK_SESSIONS", "8"))
 SEED_HOBBIES = [
     "Writing: clear, persuasive writing in {user}'s own voice (posts, essays, pitches, emails)",
