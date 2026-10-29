@@ -39,3 +39,15 @@ def test_destructive_commands_are_blocked(cmd):
 def test_env_in_other_word_not_blocked():
     assert classify("ls environment")[0] == "auto"
     assert classify("cat my.envelope.txt")[0] == "auto"
+
+
+def test_powershell_queries_are_read_only_but_script_blocks_are_not():
+    from iriis.safety.shell_policy import classify
+    for cmd in ("(Get-CimInstance Win32_Battery).EstimatedChargeRemaining",
+                "Get-CimInstance Win32_Battery | Select-Object EstimatedChargeRemaining",
+                "Get-Service | Where-Object Status -eq Running | Format-Table"):
+        assert classify(cmd)[0] == "auto", cmd
+    for cmd in ("Get-Process | Where-Object { Stop-Process $_ }", "Get-CimInstance x | Select-Object @{n='a';e={1}}",
+                "Invoke-CimMethod -ClassName Win32_Process -MethodName Create", "Get-CimInstance x > out.txt",
+                "Stop-Service spooler"):
+        assert classify(cmd)[0] == "confirm", cmd

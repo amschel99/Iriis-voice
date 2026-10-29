@@ -21,6 +21,11 @@ READ_ONLY: dict[str, object] = {
     "ver": None, "python": "version", "python3": "version", "node": "version", "nvidia-smi": None,
     "git": "git", "find": "find", "grep": None, "findstr": None, "tree": None,
     "get-childitem": None, "get-process": None, "get-date": None, "get-content": None, "get-location": None,
+    # PowerShell queries (read system state, change nothing) and the pure filters they're piped into
+    "get-ciminstance": None, "get-wmiobject": None, "get-computerinfo": None, "get-volume": None, "get-disk": None,
+    "get-netadapter": None, "get-netipaddress": None, "get-service": None, "get-uptime": None,
+    "select-object": None, "where-object": None, "sort-object": None, "measure-object": None,
+    "format-list": None, "format-table": None,
     "ollama": "ollama",
 }
 
@@ -72,7 +77,7 @@ def _first_word(segment: str) -> tuple[str, list[str]]:
         parts = segment.split()
     if not parts:
         return "", []
-    head = parts[0].lower().rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    head = parts[0].lower().lstrip("(").rsplit("/", 1)[-1].rsplit("\\", 1)[-1]   # "(Get-CimInstance X).Prop"
     if head.endswith(".exe"):
         head = head[:-4]
     return head, parts[1:]
@@ -110,6 +115,8 @@ def classify(cmd: str) -> tuple[str, str]:
         return "blocked", reason
     if _REDIRECT.search(cmd) or "`" in cmd or "$(" in cmd:
         return "confirm", "uses redirection or command substitution"
+    if "{" in cmd:          # PowerShell script blocks (Where-Object { ... }) can run anything
+        return "confirm", "contains a script block"
     segments = [s for s in _SEGMENT_SPLIT.split(cmd) if s]
     if segments and all(_segment_read_only(s) for s in segments):
         return "auto", "allowlisted read-only command"
