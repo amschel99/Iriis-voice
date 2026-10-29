@@ -48,6 +48,8 @@ URLs) need the owner's confirmation. Iriis emits a `confirm` event and waits up 
   - `iriis_status()` -> JSON health.
 
 Example client config: `{"mcpServers": {"iriis": {"type": "http", "url": "{BASE_URL}/mcp", "headers": {"Authorization": "Bearer <key>"}}}}`
+Clients that can't set headers (e.g. custom connectors): `X-API-Key: <key>`, or the key in the URL,
+`{BASE_URL}/mcp?token=<key>`. A key in a URL can end up in logs, so prefer a header when you can.
 
 ## HTTP
 
