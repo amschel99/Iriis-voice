@@ -1,9 +1,37 @@
 # Iriis
 
-> Personal voice assistant. Send it a request (text or speech); it answers in short spoken-style
-> English, streaming text and optionally audio. It can act on its owner's computer (files, apps,
-> shell, system info, clipboard) through a connected desktop agent, and keeps notes, reminders,
-> timers and long-term memory.
+> Amschel's personal assistant (voice, chat app, Telegram). Send her a request in text or speech; she
+> answers in short spoken-style English, streaming text and optionally audio. She reads documents of
+> any length, researches, makes charts and documents, runs background tasks, teaches courses, keeps
+> notes, reminders, calls and memory, and acts on his computer through a desktop agent.
+
+## What she can do (ask in plain words through `ask_iriis` or `POST /v1/chat`)
+
+She picks her own tools for each request; you never name them. Long jobs can run in the background.
+- **Day to day:** reminders, timers, alarms and phone calls to the owner ("call me at 6"), notes, long-term memory,
+  his Google calendar and Gmail (read, search, drafts; sending asks him first), a money tracker (M-Pesa, budgets),
+  time zones, unit conversion and maths.
+- **Documents of any length:** PDFs (a 4,000-page book too), Word, Excel, PowerPoint, Markdown, text, CSV and code.
+  She reads them a part at a time: the first look gives the size, the chapter list and the opening; then she reads
+  on, jumps to a chapter or searches the whole file (every hit with its page). Pictures are looked at, audio is
+  transcribed, video is watched and listened to. Send files as described under "App and media API".
+- **Making things:** charts, diagrams, maths plots, sketches, and PDF, Word, Excel and PowerPoint documents.
+- **Research:** web search and full pages; AI research papers (search, read, trending, the code and models behind
+  them); what people said in the last 30 days on Hacker News, GitHub, Polymarket and Reddit, with the volume of
+  each; source credibility ratings. Multi-step research follows a written plan and cites its sources.
+- **Background tasks and routines:** "research X and report tomorrow", "every Monday, summarise …". Progress notes
+  carry over between runs; the report arrives as a message and a notification.
+- **His computer** (when the desktop agent is connected): files, apps, the browser, the terminal, the clipboard
+  and system info. Changes there need the owner's yes, so over MCP and from other apps they're declined.
+- **Seryn Twin and Seryn Vision:** she queries the twin's cited data and models and the bench camera herself.
+- **Courses:** she teaches the owner books as courses, texting a lesson at 10:00 and 22:00 (Nairobi) into his
+  own chat, marking his answers out of 5 against each lesson's answer key and keeping his marks. Running now:
+  *The Complete Family Office Handbook* (Kirby Rosplock), 30 lessons over 15 days from 29 Oct 2026, a chapter a
+  day. From any session you can ask "how is Amschel doing on the family office course?", "what does lesson 14
+  cover?" or "what does the handbook say about 13F filings?" (she searches the lessons, then the book with page
+  numbers). Only the owner's own chat holds the lessons and his answers; other sessions don't see that chat.
+- **Her own mind:** between conversations she reflects, keeps goals and open promises, and may message or call
+  the owner. She never contacts anyone else by herself.
 
 Base URL: {BASE_URL}
 Auth: every endpoint except /health and /llms.txt needs `Authorization: Bearer <IRIIS_API_KEY>`
@@ -63,7 +91,7 @@ Server -> client:
 ## App and media API (the Iriis app at /app uses these; all need the key)
 
 - `GET /v1/history?limit=100&session=owner` -> `[{id, role, content, ts}]`, oldest first. `POST /v1/history/delete {"ids": [..], "session": "owner"}` deletes messages permanently (and from her live context).
-- `POST /v1/upload` multipart `file` (25 MB) -> `{id, name, mime, size}`. Then send it to her in a chat message as a line `[attachment file:42 "name.pdf" application/pdf 120 KB]` followed by your text; she opens it (documents read, pictures looked at, audio/video watched and listened to). Voice notes: `[attachment file:43 "voice note.webm" audio/webm 31 KB] [voice] <transcript>`.
+- `POST /v1/upload` multipart `file` (25 MB) -> `{id, name, mime, size}`. Size limit only: no page or length limit. Then send it to her in a chat message as a line `[attachment file:42 "name.pdf" application/pdf 120 KB]` followed by your text; she opens it (documents read, pictures looked at, audio/video watched and listened to). Voice notes: `[attachment file:43 "voice note.webm" audio/webm 31 KB] [voice] <transcript>`.
 - Files she makes (charts, plots, sketches, PDFs, photos) appear in her replies as lines `[file:12]`. `GET /v1/files/{id}` (bytes), `GET /v1/files/{id}/meta` -> `{id, name, mime, size, created}`, `GET /v1/media/{id}` (HTTP Range, for audio/video).
 - `GET /v1/linkpreview?url=` -> `{url, title, description, image, site}` (public http/https only).
 - Calls and alarms (she phones the user; the app rings): `GET /v1/calls?status=ringing`, `GET /v1/calls/upcoming`, `POST /v1/calls/{id}/answer` -> `{id, reason, opening}`, `POST /v1/calls/{id}/decline`, `POST /v1/calls/{id}/cancel`. When `opening` is empty, send `[call answered] <reason>` as a chat message and she speaks first.
