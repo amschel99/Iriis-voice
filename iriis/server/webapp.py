@@ -339,10 +339,18 @@ def vapid_public_key(db) -> str:
     return vapid_keys(db)[1]
 
 
+def _vapid_der_b64(private_pem: str) -> str:
+    """py_vapid's from_string takes the key as base64url DER, not PEM ("ASN.1 parsing error" otherwise)."""
+    from cryptography.hazmat.primitives import serialization
+    key = serialization.load_pem_private_key(private_pem.encode(), password=None)
+    der = key.private_bytes(serialization.Encoding.DER, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+    return base64.urlsafe_b64encode(der).rstrip(b"=").decode()
+
+
 def _send_one(sub: dict, payload: str, private_pem: str) -> int:
     from pywebpush import WebPushException, webpush
     try:
-        webpush(subscription_info=sub, data=payload, vapid_private_key=private_pem,
+        webpush(subscription_info=sub, data=payload, vapid_private_key=_vapid_der_b64(private_pem),
                 vapid_claims={"sub": "mailto:iriis@localhost"}, ttl=3600)
         return 200
     except WebPushException as e:

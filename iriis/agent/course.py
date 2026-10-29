@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -53,6 +54,10 @@ class Course:
                 return ls
         raise ValueError(f"{self.title} has lessons 1-{len(self.lessons)}; there's no lesson {n}.")
 
+    def day(self, n: int) -> int:
+        """The course day lesson n belongs to (its content), whenever it is actually sent."""
+        return (n - 1) // max(1, len(self.times)) + 1
+
     def slot_label(self, n: int) -> str:
         per_day = max(1, len(self.times))
         day, i = (n - 1) // per_day + 1, (n - 1) % per_day
@@ -93,7 +98,7 @@ def message(c: Course, n: int) -> str:
     """The text she sends for lesson n."""
     ls = c.lesson(n)
     chap = c.chapters.get(ls.chapter, "")
-    head = (f"{c.slot_label(n)} · Lesson {n} of {len(c.lessons)} · {c.title}\n"
+    head = (f"Lesson {n} of {len(c.lessons)} · Day {c.day(n)} of {c.day(len(c.lessons))} · {c.title}\n"
             f"Chapter {ls.chapter}{': ' + chap if chap else ''}\n**{ls.title}**")
     tail = ("Answer the questions here whenever you like (I'll mark them), or ask me anything about the book."
             if n < len(c.lessons) else "That's the whole book. Answer these, and ask me anything about any chapter.")
@@ -204,6 +209,8 @@ def _send(c: Course, st: dict[str, Any], now: float, db: DB) -> list[int]:
 
 async def run_courses(core, every: float = 30.0, root: Path = COURSES_DIR) -> None:
     """Texts each lesson at its time: in the chat, Telegram and a notification (Mind.say)."""
+    if os.environ.get("IRIIS_NO_COURSES"):
+        return
     tz = ZoneInfo(core.cfg.timezone or "Africa/Nairobi")
     courses = await asyncio.to_thread(all_courses, root)
     while True:

@@ -46,7 +46,7 @@ def test_lessons_parse_and_the_key_is_never_sent(course):
     assert [ls.n for ls in c.lessons] == [1, 2, 3, 4]
     assert c.lesson(1).title == "Lesson 1: the 1th idea"          # a colon in the title is fine
     msg = C.message(c, 3)
-    assert msg.startswith("Day 2 · 10 am · Lesson 3 of 4 · Demo course\nChapter 2: Two")
+    assert msg.startswith("Lesson 3 of 4 · Day 2 of 2 · Demo course\nChapter 2: Two")
     assert "Body of lesson 3" in msg and "Secret key" not in msg and "Answer key" not in msg
     assert c.slot_label(4) == "Day 2 · 10 pm"
 
@@ -103,3 +103,12 @@ def test_course_tools_on_the_real_course(tmp_path, monkeypatch):
     assert "Recorded" in S.record_answer(1, 1, 4, "good on thresholds, missed coordinator offices")
     assert "1 answers marked, average 4.0/5" in S.status()
     assert "arrives within a minute" in S.control("send_now")
+
+
+def test_vapid_key_is_given_to_pywebpush_in_the_form_it_accepts(tmp_path):
+    """Notifications failed with 'ASN.1 parsing error': py_vapid wants base64url DER, the key is stored as PEM."""
+    from py_vapid import Vapid
+    from iriis.server.webapp import _vapid_der_b64, vapid_keys
+    priv, _ = vapid_keys(DB("", tmp_path / "v.db"))
+    v = Vapid.from_string(private_key=_vapid_der_b64(priv))
+    assert v.sign({"aud": "https://fcm.googleapis.com", "sub": "mailto:iriis@localhost"})["Authorization"]

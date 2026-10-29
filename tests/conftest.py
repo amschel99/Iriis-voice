@@ -10,6 +10,7 @@ import os
 import pytest
 
 PG_URL = os.environ.get("IRIIS_TEST_PG_URL", "")
+os.environ["IRIIS_NO_COURSES"] = "1"       # the real course would text lesson 1 into every test app's chat
 
 
 @pytest.fixture(params=["sqlite", "postgres"])

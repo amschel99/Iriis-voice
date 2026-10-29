@@ -107,7 +107,8 @@ def record_answer(lesson_n: int, question: int, grade: int, feedback: str, cours
 @mcp.tool()
 def control(action: str, lesson_n: int = 0, course: str = "") -> str:
     """Change the schedule when the user asks: 'start' (begin, first lesson at the next send time), 'send_now'
-    (the next lesson arrives within a minute), 'pause', 'resume', 'goto' (lesson_n is sent next), 'restart'."""
+    (the next lesson arrives within a minute), 'pause', 'resume', 'goto' (lesson_n is sent next), 'restart'.
+    Only when the user asks for it in this conversation; never on your own (lessons come at their times)."""
     c = _course(course)
     db = get_db()
     st = C.state(c.name, db)
