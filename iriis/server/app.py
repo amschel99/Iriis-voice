@@ -172,11 +172,31 @@ def _check(token: str, secret: str, client_host: str | None) -> bool:
     return hmac.compare_digest(token.encode(), secret.encode())
 
 
+def mcp_oauth_for(cfg: Config):
+    """Claude connects with "sign in, no key": the Allow page asks for the Iriis access key (the app password)."""
+    from iriis.server.mcp_oauth import MCPOAuth
+    from iriis.storage import get_db
+
+    def load() -> str | None:
+        rows = get_db().execute("SELECT value FROM kv WHERE key = 'mcp_oauth'")
+        return rows[0][0] if rows else None
+
+    def save(value: str) -> None:
+        get_db().execute("INSERT INTO kv (key, value, updated) VALUES ('mcp_oauth', ?, ?) ON CONFLICT (key) DO UPDATE "
+                         "SET value = excluded.value, updated = excluded.updated", (value, time.time()))
+
+    def password_ok(given: str) -> bool:
+        want = _secret(cfg.server.api_key_env)
+        return bool(want and given) and hmac.compare_digest(given.encode(), want.encode())
+
+    return MCPOAuth("Iriis Voice", "iriisv", load, save, password_ok, "Your Iriis access key (the app password)")
+
+
 def _token_from(headers, query) -> str:
     auth = headers.get("authorization", "")
     if auth.lower().startswith("bearer "):
         return auth[7:].strip()
-    tok = query.get("token", "") or headers.get("x-api-key", "")
+    tok = query.get("token", "") or query.get("key", "") or headers.get("x-api-key", "")
     if not tok and headers.get("cookie"):          # the Iriis app logs in once and keeps an HttpOnly cookie
         from http.cookies import SimpleCookie
         try:
@@ -258,10 +278,10 @@ def status_dict(core: Core) -> dict[str, Any]:
 
 
 class _MCPAuth:
-    """ASGI wrapper: the MCP endpoint needs the same API key as the REST API."""
+    """ASGI wrapper: the MCP endpoint needs the API key, or a token from a connected app (OAuth sign-in)."""
 
-    def __init__(self, app, core_ref):
-        self.app, self.core_ref = app, core_ref
+    def __init__(self, app, core_ref, oauth=None):
+        self.app, self.core_ref, self.oauth = app, core_ref, oauth
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "http":
@@ -270,8 +290,12 @@ class _MCPAuth:
             from urllib.parse import parse_qs
             query = {k: v[0] for k, v in parse_qs(scope.get("query_string", b"").decode()).items()}
             client = (scope.get("client") or [None])[0]
-            if not _check(_token_from(headers, query), _secret(core.cfg.server.api_key_env), client):
-                await send({"type": "http.response.start", "status": 401, "headers": [(b"content-type", b"application/json")]})
+            tok = _token_from(headers, query)
+            if not (_check(tok, _secret(core.cfg.server.api_key_env), client) or (self.oauth and self.oauth.verify(tok))):
+                hdrs = [(b"content-type", b"application/json")]
+                if self.oauth:          # tells Claude and other MCP clients where to sign in
+                    hdrs.append((b"www-authenticate", self.oauth.challenge(headers).encode()))
+                await send({"type": "http.response.start", "status": 401, "headers": hdrs})
                 await send({"type": "http.response.body", "body": b'{"detail":"unauthorised"}'})
                 return
         await self.app(scope, receive, send)
@@ -713,7 +737,9 @@ def create_app(cfg: Config | None = None) -> FastAPI:
             return
         await ws.app.state.core.desktop.attach(ws)
 
-    app.mount("/", _MCPAuth(mcp_app, core_ref))  # serves /mcp (registered last, so API routes win)
+    oauth = mcp_oauth_for(cfg)
+    app.router.routes.extend(oauth.routes())        # sign-in for Claude and other MCP clients (before the "/" mount)
+    app.mount("/", _MCPAuth(mcp_app, core_ref, oauth))  # serves /mcp (registered last, so API routes win)
     return app
 
 

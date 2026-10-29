@@ -243,3 +243,53 @@ def test_phone_recordings_decode():
     from iriis.server.speech import decode_audio_file
     pcm = decode_audio_file((Path(__file__).parent / "question.webm").read_bytes())
     assert pcm.dtype.name == "float32" and 16000 * 1.5 < len(pcm) < 16000 * 6 and abs(pcm).max() > 0.05
+
+
+def test_mcp_sign_in_with_oauth_like_claude(monkeypatch, tmp_path):
+    """Claude's custom connector: discover, register, approve with the access key, PKCE, tokens, refresh, MCP."""
+    import base64
+    import hashlib
+    from urllib.parse import parse_qs, urlparse
+    client, _ = make_client(monkeypatch, [], tmp_path)
+    with client:
+        r = client.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+        assert r.status_code == 401 and "oauth-protected-resource/mcp" in r.headers["www-authenticate"]
+        meta = client.get("/.well-known/oauth-protected-resource/mcp").json()
+        assert meta["resource"].endswith("/mcp")
+        server = client.get("/.well-known/oauth-authorization-server").json()
+        assert server["code_challenge_methods_supported"] == ["S256"]
+        reg = client.post("/oauth/register", json={"client_name": "Claude",
+                                                    "redirect_uris": ["https://claude.ai/api/mcp/auth_callback"]}).json()
+        verifier = "v" * 50
+        challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+        q = {"client_id": reg["client_id"], "redirect_uri": "https://claude.ai/api/mcp/auth_callback",
+             "response_type": "code", "code_challenge": challenge, "code_challenge_method": "S256", "state": "s1"}
+        page = client.get("/oauth/authorize", params=q)
+        assert page.status_code == 200 and "Connect Claude to Iriis Voice?" in page.text
+        wrong = client.post("/oauth/authorize", data={**q, "decision": "allow", "password": "nope"})
+        assert "not right" in wrong.text
+        ok = client.post("/oauth/authorize", data={**q, "decision": "allow", "password": "test-key"},
+                         follow_redirects=False)
+        back = parse_qs(urlparse(ok.headers["location"]).query)
+        assert back["state"] == ["s1"]
+        tok = client.post("/oauth/token", data={"grant_type": "authorization_code", "code": back["code"][0],
+                                                "client_id": reg["client_id"], "code_verifier": verifier,
+                                                "redirect_uri": q["redirect_uri"]}).json()
+        assert tok["access_token"].startswith("iriisv_oat_")
+        again = client.post("/oauth/token", data={"grant_type": "authorization_code", "code": back["code"][0],
+                                                  "client_id": reg["client_id"], "code_verifier": verifier,
+                                                  "redirect_uri": q["redirect_uri"]})
+        assert again.status_code == 400                               # a code works once
+        hdr = {"Authorization": f"Bearer {tok['access_token']}", "Accept": "application/json, text/event-stream"}
+        init = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t", "version": "1"}}}
+        assert client.post("/mcp", json=init, headers=hdr).status_code == 200
+        new = client.post("/oauth/token", data={"grant_type": "refresh_token", "refresh_token": tok["refresh_token"],
+                                                "client_id": reg["client_id"]}).json()
+        assert new["access_token"] != tok["access_token"]
+        reuse = client.post("/oauth/token", data={"grant_type": "refresh_token", "refresh_token": tok["refresh_token"],
+                                                  "client_id": reg["client_id"]})
+        assert reuse.status_code == 400                               # refresh tokens rotate
+        assert client.post("/mcp", json=init, headers={**hdr, "Authorization": "Bearer junk"}).status_code == 401
+        assert client.post("/mcp?key=test-key", json=init,
+                           headers={"Accept": "application/json, text/event-stream"}).status_code == 200
